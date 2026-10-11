@@ -338,6 +338,21 @@ function lv_apelido_reservado(string $apelido): bool
     return false;
 }
 
+/**
+ * Data de nascimento "AAAA-MM-DD" de quem tem 18 anos ou mais (e menos de 120), ou null. A idade é contada no dia de
+ * hoje em Brasília: quem faz 18 hoje já passa.
+ */
+function lv_nascimento_maior(mixed $valor): ?string
+{
+    if (!is_string($valor) || !preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $valor, $m) || !checkdate((int) $m[2], (int) $m[3], (int) $m[1])) {
+        return null;
+    }
+    $hoje = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
+    $nascimento = new DateTimeImmutable($valor, new DateTimeZone('America/Sao_Paulo'));
+    $idade = $nascimento->diff($hoje)->y;
+    return $nascimento <= $hoje && $idade >= 18 && $idade < 120 ? $valor : null;
+}
+
 function lv_cpf_valido(string $cpf): bool
 {
     $cpf = lv_digitos($cpf);

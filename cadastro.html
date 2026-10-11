@@ -89,7 +89,7 @@
       if (!ok) return;
 
       // LV.cadastrar: no modo demonstração simula; fora dele, POST api/cadastro.php.
-      LV.cadastrar({ apelido, email, senha: $("senha").value })
+      LV.cadastrar({ apelido, email, senha: $("senha").value, nascimento: nasc })
         .then(() => {
           LV.toast("Conta criada!");
           setTimeout(() => (location.href = "creditos.html"), 700);

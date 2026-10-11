@@ -182,7 +182,11 @@
     let ultimoId = 0;
     function postar(html, classe = "", id = null) {
       const noFim = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60; // quem rolou para ler não é puxado
-      msgs.insertAdjacentHTML("beforeend", `<div class="msg ${classe}"${id ? ` data-id="${Number(id)}"` : ""}>${html}</div>`);
+      const div = `<div class="msg ${classe}"${id ? ` data-id="${Number(id)}"` : ""}>${html}</div>`;
+      // Mensagem que chega atrasada (id menor que as já na tela) entra no lugar certo, não no fim.
+      const depois = id ? [...msgs.querySelectorAll("[data-id]")].find((el) => Number(el.dataset.id) > id) : null;
+      if (depois) depois.insertAdjacentHTML("beforebegin", div);
+      else msgs.insertAdjacentHTML("beforeend", div);
       if (noFim) msgs.scrollTop = msgs.scrollHeight;
     }
     function mostrar(msg) {
@@ -197,14 +201,27 @@
     }
     // Tudo entra por aqui, em ordem de id: nada é mostrado "por fora", senão o marcador (ultimoId)
     // passaria na frente de mensagens de outras pessoas que ainda não chegaram.
+    // A busca volta SOBREPOSTA alguns ids: duas mensagens gravadas quase juntas podem aparecer fora de ordem
+    // (a de id maior primeiro), e sem a sobreposição a de id menor se perderia. As repetidas são ignoradas.
+    const SOBREPOSICAO = 20;
+    // Quem volta depois de mais tempo que isto (a aba ficou escondida) recarrega o chat: os ids apagados só
+    // chegam por 10 minutos (LV_CHAT_APAGADAS_JANELA no servidor), e o que foi apagado nesse meio sumiria só assim.
+    const RECARREGAR_DEPOIS_MS = 9 * 60 * 1000;
+    let ultimaBusca = 0;
     let buscando = false;
     let deNovo = false;
     async function buscarChat() {
       if (S.modoDemo || document.hidden) return;
       if (buscando) { deNovo = true; return; } // chegou pedido no meio de uma busca: faz outra logo depois
       buscando = true;
+      if (ultimaBusca && Date.now() - ultimaBusca > RECARREGAR_DEPOIS_MS) {
+        msgs.querySelectorAll("[data-id]").forEach((el) => el.remove());
+        vistas.clear();
+        ultimoId = 0;
+      }
       try {
-        const r = await LV.api(`chat.php?modelo=${encodeURIComponent(m.slug)}&depois=${ultimoId}`);
+        const r = await LV.api(`chat.php?modelo=${encodeURIComponent(m.slug)}&depois=${Math.max(0, ultimoId - SOBREPOSICAO)}`);
+        ultimaBusca = Date.now();
         r.mensagens.forEach(mostrar);
         // O que a modelo apagou some da tela de todo mundo.
         (r.apagadas || []).forEach((id) => msgs.querySelector(`[data-id="${Number(id)}"]`)?.remove());

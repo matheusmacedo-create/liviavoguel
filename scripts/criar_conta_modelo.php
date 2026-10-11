@@ -69,7 +69,16 @@ $agora = gmdate('Y-m-d H:i:s');
 $q = static fn(string $v): string => "'" . str_replace(["\\", "'"], ["\\\\", "\\'"], $v) . "'";
 
 fwrite(STDERR, "\nCole o SQL abaixo no phpMyAdmin (aba SQL) do banco do site:\n\n");
-echo 'INSERT INTO lv_modelos_contas (slug, email, senha_hash, ativa, criado_em) VALUES ('
-    . implode(', ', [$q($slug), $q($email), $q($hash), '1', $q($agora)]) . ")\n"
-    . "  ON DUPLICATE KEY UPDATE email = VALUES(email), senha_hash = VALUES(senha_hash), ativa = 1;\n";
-fwrite(STDERR, "\nDepois, a modelo entra em /modelo-entrar.html com $email e a senha que você digitou.\n");
+// Cria a conta deste slug, ou troca e-mail e senha da conta DESTE slug. Nunca mexe na conta de outra modelo: se o
+// e-mail já for de outro slug, os dois comandos não mudam nada (um ON DUPLICATE KEY casaria pelo e-mail e trocaria a
+// senha da outra modelo). A consulta do fim mostra como ficou.
+[$s, $e, $h] = [$q($slug), $q($email), $q($hash)];
+echo "INSERT INTO lv_modelos_contas (slug, email, senha_hash, ativa, criado_em)\n"
+    . "  SELECT $s, $e, $h, 1, {$q($agora)} FROM DUAL\n"
+    . "  WHERE NOT EXISTS (SELECT 1 FROM lv_modelos_contas WHERE slug = $s OR email = $e);\n"
+    . "UPDATE lv_modelos_contas SET email = $e, senha_hash = $h, ativa = 1\n"
+    . "  WHERE slug = $s AND NOT EXISTS (SELECT 1 FROM (SELECT id FROM lv_modelos_contas WHERE email = $e AND slug <> $s) AS outra);\n"
+    . "SELECT slug, email, ativa FROM lv_modelos_contas WHERE slug = $s OR email = $e;\n";
+fwrite(STDERR, "\nA última consulta tem que mostrar uma linha só, com $slug e $email. Se o e-mail aparecer em outra modelo,\n"
+    . "nada foi alterado: escolha outro e-mail.\n"
+    . "Depois, a modelo entra em /modelo-entrar.html com $email e a senha que você digitou.\n");

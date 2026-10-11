@@ -11,13 +11,17 @@ Site de transmissão ao vivo, pensado para **começar com 1 modelo** e crescer d
 | `sala.html?m=slug` | Sala: player, meta de gorjetas, gorjetas (rápidas ou valor livre com recado), show privado com cronômetro e cobrança por minuto, chat, seguir, abas sobre/fotos/agenda. |
 | `creditos.html` | Pacotes de créditos e dúvidas frequentes. |
 | `checkout.html?p=N` | Pagamento do pacote N: Pix (QR Code, copia e cola, contagem regressiva) ou cartão, e tela de aprovado/recusado. |
-| `entrar.html`, `cadastro.html`, `recuperar-senha.html` | Login, cadastro (checa 18+ pela data de nascimento) e recuperação de senha. |
+| `entrar.html`, `cadastro.html`, `recuperar-senha.html` | Login, cadastro (checa 18+ pela data de nascimento, no navegador e de novo no servidor) e recuperação de senha. |
 | `conta.html` | Minha conta: saldo, extrato de créditos, modelos seguidas e meus dados. |
 | `modelo-entrar.html`, `painel-modelo.html` | Área da modelo, com login próprio: ficar ao vivo, como transmitir pelo OBS, ganhos, perfil, configurações da sala, trocar senha e sair. |
 | `equipe-entrar.html`, `equipe.html` | Painel da equipe (sem link no site): pagar ou recusar saques e bloquear ou reativar modelos. |
 | `termos.html`, `404.html` | Termos/privacidade (revisar com advogado) e página de erro. |
 
 Todas as páginas mostram o aviso de **18+** na primeira visita.
+
+Com o servidor ligado (`modoDemo: false`), o navegador guarda só quem está logado, o apelido e o saldo, para a página
+se montar na hora. E-mail e extrato ficam só na memória da página, vindos do servidor: num computador compartilhado,
+nada disso fica para trás depois que a sessão acaba.
 
 ## Modo demonstração
 
@@ -92,7 +96,7 @@ ele pelas funções de `assets/js/app.js` (`LV.login`, `LV.cadastrar`, `LV.saldo
 
 | Endpoint | O que faz |
 |---|---|
-| `POST api/cadastro.php` | `{ apelido, email, senha, maior18: true }` → cria a conta e já entra (senha com 8+ caracteres) |
+| `POST api/cadastro.php` | `{ apelido, email, senha, nascimento: "AAAA-MM-DD", maior18: true }` → cria a conta e já entra (senha com 8+ caracteres; o servidor confere os 18 anos pela data e guarda a declaração em `lv_usuarios_declaracoes`, com data, IP e quando; ao excluir a conta ficam só o fato e a data da declaração) |
 | `POST api/entrar.php` / `POST api/sair.php` | Login e logout (sessão PHP) |
 | `GET api/eu.php` | `{ logado, usuario: { id, email, apelido }, saldo, extrato }` |
 | `GET api/saldo.php` | `{ saldo, email }` do usuário logado |
@@ -207,13 +211,14 @@ As tabelas de `api/schema-modelos.sql` são criadas sozinhas pela `api/`, junto 
 php scripts/criar_conta_modelo.php livia-voguel livia@exemplo.com.br
 ```
 
-O script pede a senha duas vezes, sem mostrar na tela, e imprime um `INSERT`. Cole esse SQL no phpMyAdmin
+O script pede a senha duas vezes, sem mostrar na tela, e imprime o SQL (um `INSERT`, um `UPDATE` e uma consulta). Cole esse SQL no phpMyAdmin
 (aba SQL). A senha nunca é guardada: só o hash vai para o banco. Rodar de novo para o mesmo slug troca o e-mail
 e a senha. O slug precisa existir em `api/lib/modelos.php`.
 
 - **Bloquear uma modelo** sem apagar nada: `UPDATE lv_modelos_contas SET ativa = 0 WHERE slug = 'livia-voguel';`
   (a sessão aberta dela cai na hora).
-- **Esqueceu a senha:** rode o script de novo com uma senha nova e passe para ela.
+- **Esqueceu a senha:** rode o script de novo com uma senha nova e passe para ela. O SQL gerado só cria ou atualiza
+  a conta daquele slug: se o e-mail já for de outra modelo, nada muda (a consulta do fim mostra como ficou).
 - O acesso vence sozinho em 12 horas. Depois de 5 senhas erradas em 15 minutos, o login espera.
 
 **Saques:** na seção Ganhos, a modelo cadastra a chave Pix (CPF, e-mail, celular ou aleatória, conferida no servidor)
@@ -274,6 +279,9 @@ as mesmas mensagens, buscadas a cada 3 segundos enquanto a aba está visível (`
 
 - Escrever (`api/chat-enviar.php`) exige login e a modelo ao vivo. Mensagens de até 200 caracteres; as palavras
   bloqueadas em "Configurar sala" são barradas também no servidor (sem diferenciar maiúsculas nem acentos).
+- A sala busca as mensagens novas a cada 3 s, voltando alguns ids a cada busca: uma mensagem gravada fora de ordem
+  não se perde e entra no lugar certo. Quem volta depois de 9 minutos com a aba escondida recarrega o chat, para
+  sumirem as mensagens apagadas nesse meio-tempo.
 - Freio contra spam: uma mensagem a cada 2 segundos e no máximo 20 por minuto por pessoa (contando junto as
   abas e aparelhos da mesma conta), e no máximo 60 por minuto por IP somando todas as contas.
 - Apelido com palavra que a modelo bloqueou aparece como "anônimo"; apelido que imita uma modelo ou a equipe

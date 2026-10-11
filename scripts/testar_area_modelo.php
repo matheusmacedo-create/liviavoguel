@@ -1058,10 +1058,10 @@ foreach (['Livia_Voguel', 'livia123', 'LIVIA', 'suporte_site', 'x_liviavoguel_x'
 verificar('apelido parecido, mas de outra pessoa, passa', [$s, $c['usuario']['apelido'] ?? null], [200, 'olivia_rj']);
 $pdo->exec("UPDATE lv_usuarios SET apelido = 'ana_rj' WHERE id = $ana");
 $_SESSION = [];
-[$s, $c] = chamar('cadastro.php', 'POST', ['email' => 'livia.voguel@exemplo.com.br', 'senha' => 'segredo1234', 'maior18' => true]);
+[$s, $c] = chamar('cadastro.php', 'POST', ['email' => 'livia.voguel@exemplo.com.br', 'senha' => 'segredo1234', 'nascimento' => '1990-05-20', 'maior18' => true]);
 verificar('cadastro com e-mail que imita a modelo ganha apelido neutro', [$s, (bool) preg_match('/^fa_\d+$/', $c['usuario']['apelido'] ?? '')], [201, true]);
 $_SESSION = [];
-[$s, $c] = chamar('cadastro.php', 'POST', ['email' => 'outra@exemplo.com.br', 'senha' => 'segredo1234', 'apelido' => 'Livia_Voguel', 'maior18' => true]);
+[$s, $c] = chamar('cadastro.php', 'POST', ['email' => 'outra@exemplo.com.br', 'senha' => 'segredo1234', 'apelido' => 'Livia_Voguel', 'nascimento' => '1990-05-20', 'maior18' => true]);
 verificar('cadastro com o apelido da modelo: 422', [$s, $c['campo'] ?? null], [422, 'apelido']);
 $_SESSION = [];
 
@@ -1110,10 +1110,13 @@ verificar('excluir com senha errada: 401', [$s, $c['campo'] ?? null], [401, 'sen
 [$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'EXCLUIR']);
 verificar('excluir com pagamento pendente: 409', $s, 409);
 $pdo->exec("UPDATE lv_pedidos SET status = 'expirado'");
+$pdo->exec("INSERT INTO lv_usuarios_declaracoes (usuario_id, nascimento, ip, declarado_em) VALUES ($ana, '1990-05-20', '203.0.113.9', '2026-01-01 00:00:00')");
 [$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'EXCLUIR']);
 verificar('excluir: 200 e sai da conta', [$s, $_SESSION], [200, []]);
 
 $u = $pdo->query("SELECT email, apelido FROM lv_usuarios WHERE id = $ana")->fetch();
+$decl = $pdo->query("SELECT nascimento, ip, declarado_em FROM lv_usuarios_declaracoes WHERE usuario_id = $ana")->fetch();
+verificar('excluir: a declaração de 18+ perde a data e o IP, fica só que foi feita', [$decl['nascimento'], $decl['ip'], $decl['declarado_em']], [null, null, '2026-01-01 00:00:00']);
 verificar('e-mail e apelido viram anônimos', [$u['email'], $u['apelido']], ["excluida-$ana@conta-excluida.invalid", "excluida_$ana"]);
 $_SESSION = [];
 [$s] = chamar('entrar.php', 'POST', ['email' => 'ana.nova@exemplo.com.br', 'senha' => $senhaCli]);

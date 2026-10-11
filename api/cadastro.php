@@ -1,6 +1,7 @@
 <?php
 /**
- * POST { email, senha, apelido?, maior18: true } → cria a conta e já entra. Senha com LV_SENHA_MINIMA+ caracteres,
+ * POST { email, senha, apelido?, nascimento: "AAAA-MM-DD", maior18: true } → cria a conta e já entra. A idade (18+)
+ * é conferida de novo aqui, e a declaração (data, IP, quando) fica em lv_usuarios_declaracoes. Senha com LV_SENHA_MINIMA+ caracteres,
  * guardada com password_hash. Sem apelido, usa o começo do e-mail. Devolve o estado da conta (o mesmo de eu.php).
  */
 declare(strict_types=1);
@@ -29,6 +30,11 @@ if (lv_apelido_reservado($apelido)) {
 if (($b['maior18'] ?? false) !== true) {
     lv_falhar(422, 'Confirme que você tem 18 anos ou mais.', ['campo' => 'maior18']);
 }
+$nascimento = lv_nascimento_maior($b['nascimento'] ?? null);
+if ($nascimento === null) {
+    lv_falhar(422, isset($b['nascimento']) && is_string($b['nascimento']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $b['nascimento'])
+        ? 'O site é só para maiores de 18 anos.' : 'Informe sua data de nascimento.', ['campo' => 'nascimento']);
+}
 if (lv_contar_eventos('cadastro', lv_ip(), 3600) >= 10) {
     lv_falhar(429, 'Muitos cadastros seguidos. Tente mais tarde.');
 }
@@ -44,5 +50,7 @@ try {
     lv_falhar(409, 'Este e-mail já tem conta. Entre com sua senha.', ['campo' => 'email']);
 }
 $id = (int) lv_db()->lastInsertId();
+lv_db()->prepare('INSERT INTO lv_usuarios_declaracoes (usuario_id, nascimento, ip, declarado_em) VALUES (?, ?, ?, ?)')
+    ->execute([$id, $nascimento, lv_ip(), lv_agora()]);
 lv_logar($id, $senhaHash);
 lv_json(lv_estado($id) + ['email' => $email], 201);

@@ -42,9 +42,15 @@
     return dados;
   }
 
-  const estado = () => lerJSON(CACHE, null) || { logado: false, usuario: null, saldo: 0, extrato: [] };
+  // O estado completo (e-mail, extrato) fica só na memória desta página, vindo do servidor. No navegador fica só o
+  // mínimo para a página se montar na hora (quem está logado, apelido e saldo): um computador compartilhado não
+  // guarda e-mail nem o histórico de gastos de ninguém depois que a sessão acaba.
+  let memoria = null;
+  const estado = () => memoria || { extrato: [], ...(lerJSON(CACHE, null) || { logado: false, usuario: null, saldo: 0 }) };
   function guardarEstado(e) {
-    gravar(CACHE, JSON.stringify({ logado: !!e.logado, usuario: e.usuario || null, saldo: Number(e.saldo) || 0, extrato: e.extrato || [] }));
+    memoria = { logado: !!e.logado, usuario: e.usuario || null, saldo: Number(e.saldo) || 0, extrato: e.extrato || [] };
+    const u = memoria.usuario;
+    gravar(CACHE, JSON.stringify({ logado: memoria.logado, usuario: u ? { id: u.id, apelido: u.apelido } : null, saldo: memoria.saldo }));
     mostrarSaldo();
   }
   function mostrarSaldo() {
@@ -89,9 +95,10 @@
     return api("entrar.php", { email, senha }).then((e) => { guardarEstado(e); return e.usuario; });
   }
   /** Cadastro (o servidor exige 18+ e senha de 8+ caracteres). */
-  function cadastrar({ apelido, email, senha }) {
+  function cadastrar({ apelido, email, senha, nascimento }) {
     if (DEMO) return entrar({ apelido, email });
-    return api("cadastro.php", { apelido, email, senha, maior18: true }).then((e) => { guardarEstado(e); return e.usuario; });
+    // A data de nascimento vai para o servidor, que confere os 18 anos de novo e guarda a declaração.
+    return api("cadastro.php", { apelido, email, senha, nascimento, maior18: true }).then((e) => { guardarEstado(e); return e.usuario; });
   }
   function trocarSenha(atual, nova) {
     if (DEMO) return Promise.resolve();

@@ -53,6 +53,8 @@ try {
         $apagar->execute([(int) $m['id'], (string) $m['slug'], lv_agora()]);
     }
     $pdo->prepare('DELETE FROM lv_chat_bloqueios WHERE usuario_id = ?')->execute([$usuarioId]);
+    // Declaração de 18+: fica só o fato de que foi feita (sem data de nascimento nem IP).
+    $pdo->prepare('UPDATE lv_usuarios_declaracoes SET nascimento = NULL, ip = NULL WHERE usuario_id = ?')->execute([$usuarioId]);
     // Registros de tentativa de login guardam o e-mail na chave: saem também.
     $pdo->prepare('DELETE FROM lv_eventos WHERE chave = ?')->execute(['e:' . $conta['email']]);
     $pdo->commit();

@@ -163,21 +163,37 @@ lv_db(banco_novo());
 $_SESSION = [];
 [$s, $r] = chamar('saldo.php');
 verificar('saldo sem login = 401', [$s, $r['login'] ?? null], [401, true]);
-[$s] = chamar('cadastro.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'curta', 'maior18' => true]);
+[$s] = chamar('cadastro.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'curta', 'nascimento' => '1990-05-20', 'maior18' => true]);
 verificar('senha curta recusada', $s, 422);
 [$s] = chamar('cadastro.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'segredo123']);
 verificar('cadastro sem 18+ recusado', $s, 422);
-[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'Ana@Exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+// A idade é conferida no servidor pela data de nascimento (não basta o navegador dizer maior18: true).
+$hojeBr = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
+[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+verificar('cadastro sem data de nascimento: 422', [$s, $r['campo'] ?? null], [422, 'nascimento']);
+[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true, 'nascimento' => $hojeBr->modify('-18 years +1 day')->format('Y-m-d')]);
+verificar('17 anos (faz 18 amanhã): 422', [$s, $r['campo'] ?? null, $r['erro'] ?? null], [422, 'nascimento', 'O site é só para maiores de 18 anos.']);
+foreach (['2001-02-30', '20/05/1990', '1890-01-01', $hojeBr->modify('+1 day')->format('Y-m-d')] as $ruim) {
+    [$s] = chamar('cadastro.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true, 'nascimento' => $ruim]);
+    verificar("data de nascimento inválida ($ruim): 422", $s, 422);
+}
+verificar('nenhuma conta criada pelas tentativas recusadas', (int) lv_db()->query('SELECT COUNT(*) FROM lv_usuarios')->fetchColumn(), 0);
+[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'faz18hoje@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true, 'nascimento' => $hojeBr->modify('-18 years')->format('Y-m-d')]);
+verificar('faz 18 hoje: entra', $s, 201);
+$declaracao = lv_db()->query('SELECT nascimento, ip FROM lv_usuarios_declaracoes WHERE usuario_id = ' . (int) $r['usuario']['id'])->fetch();
+verificar('a declaração de 18+ fica guardada com data e IP', [$declaracao['nascimento'] ?? null, $declaracao['ip'] ?? null], [$hojeBr->modify('-18 years')->format('Y-m-d'), '203.0.113.7']);
+$_SESSION = [];
+[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'Ana@Exemplo.com.br', 'senha' => 'segredo123', 'nascimento' => '1990-05-20', 'maior18' => true]);
 verificar('cadastro ok', [$s, $r['email'] ?? null], [201, 'ana@exemplo.com.br']);
 $hash = lv_db()->query("SELECT senha_hash FROM lv_usuarios WHERE email = 'ana@exemplo.com.br'")->fetchColumn();
 verificar('senha guardada com password_hash', password_verify('segredo123', (string) $hash) && $hash !== 'segredo123', true);
-[$s] = chamar('cadastro.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'outra12345', 'maior18' => true]);
+[$s] = chamar('cadastro.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'outra12345', 'nascimento' => '1990-05-20', 'maior18' => true]);
 verificar('e-mail repetido = 409', $s, 409);
-[$s] = chamar('cadastro.php', 'POST', ['email' => 'x@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true], [], ['HTTP_ORIGIN' => 'https://malicioso.example']);
+[$s] = chamar('cadastro.php', 'POST', ['email' => 'x@exemplo.com.br', 'senha' => 'segredo123', 'nascimento' => '1990-05-20', 'maior18' => true], [], ['HTTP_ORIGIN' => 'https://malicioso.example']);
 verificar('outra origem = 403', $s, 403);
 [$s] = chamar('cadastro.php', 'POST', null, [], ['CONTENT_TYPE' => 'application/x-www-form-urlencoded', '_corpo' => 'email=a']);
 verificar('formulário (não JSON) = 415', $s, 415);
-[$s] = chamar('cadastro.php', 'POST', ['email' => 'www@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true], [], ['HTTP_ORIGIN' => 'https://www.exemplo.com.br']);
+[$s] = chamar('cadastro.php', 'POST', ['email' => 'www@exemplo.com.br', 'senha' => 'segredo123', 'nascimento' => '1990-05-20', 'maior18' => true], [], ['HTTP_ORIGIN' => 'https://www.exemplo.com.br']);
 verificar('origem www aceita', $s, 201);
 
 [$s] = chamar('sair.php', 'POST');
@@ -371,7 +387,7 @@ verificar('estorno de créditos ainda não gastos não desconta das modelos', $e
 // Estorno (chargeback) de uma compra já gasta em gorjetas: o que ficou sem dinheiro sai do saque das modelos.
 $sessaoAna = $_SESSION;
 $_SESSION = [];
-chamar('cadastro.php', 'POST', ['email' => 'golpe@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+chamar('cadastro.php', 'POST', ['email' => 'golpe@exemplo.com.br', 'senha' => 'segredo123', 'nascimento' => '1990-05-20', 'maior18' => true]);
 $golpe = $_SESSION['usuario_id'];
 [, $r] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador); // +50
 $pedidoGolpe = lv_pedido_por('codigo', $r['id']);
@@ -454,16 +470,16 @@ chamar('conta.php', 'POST', ['senha_atual' => 'novasenha1', 'senha_nova' => 'seg
 
 // ============================================================================= isolamento entre usuários
 $_SESSION = [];
-chamar('cadastro.php', 'POST', ['email' => 'bia@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+chamar('cadastro.php', 'POST', ['email' => 'bia@exemplo.com.br', 'senha' => 'segredo123', 'nascimento' => '1990-05-20', 'maior18' => true]);
 [$s] = chamar('status.php', 'GET', null, ['id' => $pixId]);
 verificar('outro usuário não vê o pedido', $s, 404);
 [$s, $r] = chamar('saldo.php');
 verificar('saldo do outro usuário = 0', $r['saldo'] ?? null, 0);
 [$s, $r] = chamar('eu.php');
 verificar('eu.php do outro usuário: extrato vazio', [$r['usuario']['apelido'] ?? null, $r['extrato'] ?? null], ['bia', []]);
-[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'apelido@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true, 'apelido' => 'x']);
+[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'apelido@exemplo.com.br', 'senha' => 'segredo123', 'nascimento' => '1990-05-20', 'maior18' => true, 'apelido' => 'x']);
 verificar('cadastro com apelido inválido = 422', [$s, $r['campo'] ?? null], [422, 'apelido']);
-[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'um.nome.bem.comprido.demais@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'um.nome.bem.comprido.demais@exemplo.com.br', 'senha' => 'segredo123', 'nascimento' => '1990-05-20', 'maior18' => true]);
 verificar('apelido padrão de e-mail comprido', [$s, $r['usuario']['apelido'] ?? null], [201, 'um_nome_bem_comprido']);
 $_SESSION = [];
 [$s, $r] = chamar('eu.php');
@@ -476,7 +492,7 @@ verificar('id malformado = 404', $s, 404);
 
 // ============================================================================= preço de teste (R$ 1,00)
 $_SESSION = [];
-chamar('cadastro.php', 'POST', ['email' => 'dono@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+chamar('cadastro.php', 'POST', ['email' => 'dono@exemplo.com.br', 'senha' => 'segredo123', 'nascimento' => '1990-05-20', 'maior18' => true]);
 $dono = $_SESSION['usuario_id'];
 chamar('cobranca.php', 'POST', ['pacote' => 3, 'metodo' => 'pix'] + $comprador);
 verificar('fora de TESTE_USUARIOS: preço cheio', end($unico['chamadas'])[2]['amount'], LV_PACOTES[3]['centavos']);
