@@ -22,6 +22,7 @@ register_shutdown_function(static fn() => @unlink($configTeste));
 $_SERVER['REQUEST_METHOD'] = 'CLI';
 require $raiz . '/api/lib/base.php';
 require $raiz . '/api/lib/modelo-conta.php';
+require $raiz . '/api/lib/chat.php';
 
 $falhas = 0;
 $total = 0;
@@ -466,6 +467,96 @@ verificar('sala inválida não muda o preço salvo', lv_preco_privado('livia-vog
 verificar('configurar sala vindo de outro site: 403', $s, 403);
 [$s] = chamar('salas.php', 'POST', []);
 verificar('salas.php por POST: 405', $s, 405);
+
+// ============================================================================= chat
+recomecar();
+criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$pdo = lv_db();
+$pdo->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES ('fa@exemplo.com.br', 'fa_1', 'x', '2026-01-01 00:00:00')");
+$fa = (int) $pdo->lastInsertId();
+lv_lancar($fa, 500, 'compra', null, 'Pacote de 500 créditos');
+$lerChat = static function (array $get = []): array { $_GET = ['modelo' => 'livia-voguel'] + $get; $r = chamar('chat.php'); $_GET = []; return $r; };
+$enviar = static fn(string $texto) => chamar('chat-enviar.php', 'POST', ['modelo' => 'livia-voguel', 'texto' => $texto]);
+// Libera o freio de intervalo entre mensagens (empurra os registros de chat 3 s para trás).
+$esperar = static fn() => $pdo->exec("UPDATE lv_eventos SET criado_em = '" . gmdate('Y-m-d H:i:s', time() - 3) . "' WHERE tipo = 'chat' AND criado_em > '" . gmdate('Y-m-d H:i:s', time() - 3) . "'");
+
+$_GET = ['modelo' => 'nao-existe'];
+[$s] = chamar('chat.php');
+verificar('chat de modelo que não existe: 422', $s, 422);
+[$s, $c] = $lerChat();
+verificar('chat começa vazio', [$s, $c['mensagens'], $c['ultimo_id']], [200, [], 0]);
+
+$_SESSION = [];
+[$s, $c] = $enviar('oi');
+verificar('mandar mensagem sem login: 401', [$s, $c['login'] ?? null], [401, true]);
+$_SESSION = ['usuario_id' => $fa];
+[$s] = $enviar('oi');
+verificar('mandar mensagem com a modelo offline: 409', $s, 409);
+
+lv_ao_vivo_definir('livia-voguel', true);
+[$s, $c] = $enviar("  oi   Livia!  ");
+verificar('mensagem enviada: 200', $s, 200);
+verificar('mensagem guardada sem espaços sobrando e com o apelido', [$c['mensagem']['texto'], $c['mensagem']['apelido']], ['oi Livia!', 'fa_1']);
+[$s] = $enviar('de novo');
+verificar('duas mensagens em menos de 2 s: 429', $s, 429);
+$esperar();
+[$s] = $enviar('<b>linda</b>');
+verificar('depois de 2 s: manda de novo', $s, 200);
+[, $c] = $lerChat();
+verificar('todos leem as mensagens, na ordem', array_map(static fn($m) => $m['texto'], $c['mensagens']), ['oi Livia!', '<b>linda</b>']);
+$primeiro = $c['mensagens'][0]['id'];
+[, $c] = $lerChat(['depois' => (string) $primeiro]);
+verificar('com "depois", só as novas', array_map(static fn($m) => $m['texto'], $c['mensagens']), ['<b>linda</b>']);
+[, $c] = $lerChat(['depois' => 'abc']);
+verificar('"depois" inválido vira do começo', count($c['mensagens']), 2);
+
+$esperar();
+[$s, $c] = $enviar(str_repeat('a', 201));
+verificar('mensagem com mais de 200 caracteres: 422', $s, 422);
+[$s] = $enviar('   ');
+verificar('mensagem vazia: 422', $s, 422);
+
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+chamar('modelo-sala.php', 'POST', ['preco_privado' => 20, 'meta_titulo' => '', 'meta_alvo' => null, 'boas_vindas' => '', 'bloqueadas' => ['telefone', 'WhatsApp']]);
+$_SESSION = ['usuario_id' => $fa];
+$esperar();
+[$s, $c] = $enviar('me passa o TELEFÔNE?');
+verificar('palavra bloqueada com maiúscula e acento: 422', [$s, $c['campo'] ?? null], [422, 'texto']);
+[$s] = $enviar('meu whats app');
+verificar('palavra separada não é a bloqueada', $s, 200);
+
+for ($i = 0; $i < LV_CHAT_POR_MINUTO; $i++) {
+    $esperar();
+    lv_registrar('chat', 'u:' . $fa);
+}
+$esperar();
+[$s] = $enviar('mais uma');
+verificar('mais de 20 mensagens por minuto: 429', $s, 429);
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'chat'");
+
+// Gorjeta aparece no chat com o recado; privado não aparece.
+$antes = lv_saldo($fa);
+[$s, $c] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 15, 'recado' => 'Linda demais']);
+verificar('gorjeta com recado: 200', $s, 200);
+[, $c] = $lerChat();
+verificar('gorjeta aparece no chat com valor e recado', array_slice(array_map(static fn($m) => [$m['tipo'], $m['apelido'], $m['texto'], $m['creditos']], $c['mensagens']), -1),
+    [['gorjeta', 'fa_1', 'Linda demais', 15]]);
+[$s, $c] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 15, 'recado' => 'me liga no whatsapp']);
+verificar('recado com palavra bloqueada: 422 no campo recado', [$s, $c['campo'] ?? null], [422, 'recado']);
+verificar('recado recusado não debita', lv_saldo($fa), $antes - 15);
+[$s] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 15, 'recado' => str_repeat('a', 81)]);
+verificar('recado com mais de 80 caracteres: 422', $s, 422);
+$qtdChat = count($lerChat()[1]['mensagens']);
+chamar('gastar.php', 'POST', ['tipo' => 'privado', 'modelo' => 'livia-voguel']);
+verificar('privado não aparece no chat', count($lerChat()[1]['mensagens']), $qtdChat);
+chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 5]);
+verificar('gorjeta sem recado também aparece', array_slice(array_map(static fn($m) => [$m['tipo'], $m['texto'], $m['creditos']], $lerChat()[1]['mensagens']), -1), [['gorjeta', '', 5]]);
+
+[$s] = chamar('chat-enviar.php', 'POST', ['modelo' => 'livia-voguel', 'texto' => 'oi'], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('mensagem vinda de outro site: 403', $s, 403);
+[$s] = chamar('chat.php', 'POST', []);
+verificar('chat.php por POST: 405', $s, 405);
 
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
