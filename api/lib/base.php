@@ -117,7 +117,59 @@ function lv_db(?PDO $usar = null): PDO
         error_log('[pagamentos] banco indisponível: ' . $e->getMessage());
         lv_falhar(503, 'Serviço indisponível. Tente de novo em instantes.');
     }
+    if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+        lv_migrar($pdo);
+    }
     return $pdo;
+}
+
+/** Arquivos de esquema que a api/ aplica sozinha no MySQL, nesta ordem. */
+const LV_ESQUEMAS = ['schema.sql', 'schema-modelos.sql'];
+
+/**
+ * Os comandos SQL dos arquivos de esquema, sem comentários. Todos são CREATE TABLE IF NOT EXISTS: rodar de novo não
+ * muda nada nas tabelas que já existem (coluna nova numa tabela existente precisa de ALTER feito à mão).
+ */
+function lv_esquema_comandos(): array
+{
+    $comandos = [];
+    foreach (LV_ESQUEMAS as $arquivo) {
+        $sql = (string) @file_get_contents(dirname(__DIR__) . '/' . $arquivo);
+        $sql = preg_replace('/--[^\n]*/', '', $sql) ?? '';
+        foreach (explode(';', $sql) as $comando) {
+            if (trim($comando) !== '') {
+                $comandos[] = trim($comando);
+            }
+        }
+    }
+    return $comandos;
+}
+
+/**
+ * Cria as tabelas que faltam, sem precisar do phpMyAdmin. A versão (md5 dos arquivos de esquema) fica em lv_esquema:
+ * enquanto os arquivos não mudam, custa uma consulta por requisição. Quando mudam (deploy novo), roda de novo.
+ */
+function lv_migrar(PDO $pdo): void
+{
+    $versao = md5(implode("\n", array_map(static fn(string $a): string => (string) @file_get_contents(dirname(__DIR__) . '/' . $a), LV_ESQUEMAS)));
+    try {
+        if ($pdo->query('SELECT versao FROM lv_esquema LIMIT 1')->fetchColumn() === $versao) {
+            return;
+        }
+    } catch (PDOException) {
+        // lv_esquema ainda não existe: banco novo.
+    }
+    try {
+        foreach (lv_esquema_comandos() as $comando) {
+            $pdo->exec($comando);
+        }
+        $pdo->exec('CREATE TABLE IF NOT EXISTS lv_esquema (versao CHAR(32) NOT NULL, aplicado_em DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+        $pdo->exec('DELETE FROM lv_esquema');
+        $pdo->prepare('INSERT INTO lv_esquema (versao, aplicado_em) VALUES (?, ?)')->execute([$versao, lv_agora()]);
+    } catch (PDOException $e) {
+        error_log('[pagamentos] não foi possível criar as tabelas: ' . $e->getMessage());
+        lv_falhar(503, 'Serviço indisponível. Tente de novo em instantes.');
+    }
 }
 
 function lv_registrar(string $tipo, string $chave, ?string $detalhe = null): void
