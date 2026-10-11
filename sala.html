@@ -19,6 +19,7 @@
   <script src="assets/js/modelos.js"></script>
   <script src="assets/js/ao-vivo.js"></script>
   <script src="assets/js/perfis.js"></script>
+  <script src="assets/js/salas.js"></script>
   <script src="assets/js/app.js"></script>
   <script>
     LV.montar("sala");
@@ -30,9 +31,11 @@
     const m = window.MODELOS.find((x) => x.slug === slug) || window.MODELOS[0];
     document.title = `${m.nome} — Sala ao vivo`;
 
-    // Total da meta da sala. No modo demonstração conta só as suas gorjetas.
+    // Total da meta da sala: vem do servidor (todas as gorjetas desde que a meta foi definida).
+    // No modo demonstração conta só as suas gorjetas, neste navegador.
     const chaveMeta = "lv_meta_" + m.slug;
-    const metaAtual = () => Number(LV.ler(chaveMeta, 0));
+    const metaAtual = () => (S.modoDemo ? Number(LV.ler(chaveMeta, 0)) : m.meta?.atual ?? 0);
+    const boasVindas = () => m.boasVindas || `Bem-vindo(a) à sala de ${m.nome}! Seja respeitoso(a) 💜`;
 
     function player() {
       if (m.online && m.streamUrl && LV.usuario()) {
@@ -67,17 +70,13 @@
 
         <div class="player" id="player">${player()}</div>
 
-        ${m.meta ? `
-        <div class="meta-sala">
-          <div class="meta-topo"><strong>🎯 Meta: ${esc(m.meta.titulo)}</strong><span id="meta-txt"></span></div>
-          <div class="barra"><div id="meta-barra"></div></div>
-        </div>` : ""}
+        <div id="meta-sala"></div>
 
         <div class="barra-gorjeta">
           <strong>Gorjeta:</strong>
           ${S.gorjetas.map((v) => `<button data-gorjeta="${v}">● ${v}</button>`).join("")}
           <button data-gorjeta="">Outro valor</button>
-          <button class="btn btn-primario btn-pequeno privado" id="privado">🔒 Show privado · ${m.precoPrivado}/min</button>
+          <button class="btn btn-primario btn-pequeno privado" id="privado">🔒 Show privado · <span id="preco-privado">${m.precoPrivado}</span>/min</button>
         </div>
 
         <div class="abas" id="abas">
@@ -91,7 +90,7 @@
       <aside class="chat">
         <div class="chat-topo"><strong>Chat ao vivo</strong><small style="color:var(--texto-2)" id="quem"></small></div>
         <div class="chat-msgs" id="msgs" aria-live="polite">
-          <div class="msg sistema">Bem-vindo(a) à sala de ${esc(m.nome)}! Seja respeitoso(a) 💜</div>
+          <div class="msg sistema" id="msg-boas-vindas">${esc(boasVindas())}</div>
         </div>
         <form class="chat-form" id="chat-form">
           <input id="chat-input" maxlength="200" placeholder="${LV.usuario() ? "Diga oi..." : "Entre para conversar"}" autocomplete="off">
@@ -103,7 +102,14 @@
     if (u) $("quem").textContent = "você é " + u.apelido;
 
     function atualizarMeta() {
-      if (!m.meta) return;
+      const caixa = $("meta-sala");
+      if (!m.meta) return (caixa.innerHTML = "");
+      if (!$("meta-txt")) {
+        caixa.innerHTML = `<div class="meta-sala">
+          <div class="meta-topo"><strong>🎯 Meta: <span id="meta-titulo"></span></strong><span id="meta-txt"></span></div>
+          <div class="barra"><div id="meta-barra"></div></div></div>`;
+      }
+      $("meta-titulo").textContent = m.meta.titulo;
       const atual = Math.min(metaAtual(), m.meta.alvo);
       $("meta-txt").textContent = `${atual} / ${m.meta.alvo}`;
       $("meta-barra").style.width = (atual / m.meta.alvo) * 100 + "%";
@@ -144,6 +150,7 @@
       const input = $("chat-input");
       const texto = input.value.trim();
       if (!texto) return;
+      if (LVSalas.palavraBloqueada(m, texto)) return toast(`${m.nome} bloqueou uma das palavras dessa mensagem.`);
       postar(`<b>${esc(LV.usuario().apelido)}:</b>${esc(texto)}`);
       input.value = "";
     });
@@ -153,7 +160,8 @@
       if (LV.saldo() < valor) return LV.semCreditos(valor);
       // Fora do modo demonstração, o débito é feito no servidor (api/gastar.php); recusado, não aparece no chat.
       LV.lancar(-valor, `Gorjeta para ${m.nome}`, { tipo: "gorjeta", modelo: m.slug }).then(() => {
-        LV.gravar(chaveMeta, metaAtual() + valor);
+        if (S.modoDemo) LV.gravar(chaveMeta, metaAtual() + valor);
+        else if (m.meta) m.meta.atual += valor; // o servidor confirma na próxima consulta
         atualizarMeta();
         postar(`💸 <b>${esc(LV.usuario().apelido)}</b> mandou ${valor} créditos${recado ? `: “${esc(recado)}”` : "!"}`, "gorjeta");
         toast(`Gorjeta de ${valor} créditos enviada!`);
@@ -179,8 +187,10 @@
       inp.addEventListener("input", () => { valor = Math.floor(Number(inp.value)); marcar(); });
       md.querySelector("#g-enviar").addEventListener("click", () => {
         if (!(valor >= 1)) return toast("Informe um valor de pelo menos 1 crédito.");
+        const recado = md.querySelector("#g-recado").value.trim();
+        if (LVSalas.palavraBloqueada(m, recado)) return toast(`${m.nome} bloqueou uma das palavras desse recado.`);
         md.fechar();
-        darGorjeta(valor, md.querySelector("#g-recado").value.trim());
+        darGorjeta(valor, recado);
       });
     }
 
@@ -290,6 +300,14 @@
       document.title = `${m.nome} — Sala ao vivo`;
       $("sala-nome").textContent = m.nome;
       $("sala-local").textContent = `${m.idade} anos · ${m.cidade}`;
+      abrirAba(document.querySelector("#abas button.ativo")?.dataset.aba || "sobre");
+    });
+
+    // Configuração da sala salva pela modelo: preço do privado, meta, boas-vindas (e o filtro do chat, lido na hora).
+    document.addEventListener("lv:sala", () => {
+      $("preco-privado").textContent = m.precoPrivado;
+      $("msg-boas-vindas").textContent = boasVindas();
+      atualizarMeta();
       abrirAba(document.querySelector("#abas button.ativo")?.dataset.aba || "sobre");
     });
   </script>

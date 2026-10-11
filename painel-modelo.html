@@ -26,6 +26,7 @@
   <script src="assets/js/config.js"></script>
   <script src="assets/js/modelos.js"></script>
   <script src="assets/js/perfis.js"></script>
+  <script src="assets/js/salas.js"></script>
   <script src="assets/js/app.js"></script>
   <script>
     /*
@@ -248,16 +249,22 @@
         </div>`,
 
       sala: () => `
-        <form class="painel" novalidate>
+        <form class="painel" id="form-sala" novalidate>
           <h2>Configurar sala</h2>
+          <p style="color:var(--texto-2);margin-bottom:14px">Vale na hora para a sua sala. O preço do privado é o que o site cobra de quem te chama.</p>
+          <div class="campo"><label for="s-privado">Preço do privado (créditos por minuto)</label>
+            <input id="s-privado" type="number" min="1" max="500" step="1" inputmode="numeric" value="${m.precoPrivado}">
+            <span class="ajuda">De 1 a 500. Cada crédito vale ${ganhos ? dinheiro(ganhos.repasse_centavos) : "R$ 0,20"} para você.</span></div>
           <div class="linha">
-            <div class="campo"><label for="s-privado">Preço do privado (créditos/min)</label><input id="s-privado" type="number" min="1" value="${m.precoPrivado}"></div>
-            <div class="campo"><label for="s-alvo">Meta de gorjetas (créditos)</label><input id="s-alvo" type="number" min="1" value="${m.meta?.alvo ?? ""}"></div>
+            <div class="campo"><label for="s-meta">Título da meta de gorjetas</label><input id="s-meta" value="${esc(m.meta?.titulo ?? "")}" maxlength="60" placeholder="ex.: Dança especial"></div>
+            <div class="campo"><label for="s-alvo">Valor da meta (créditos)</label><input id="s-alvo" type="number" min="1" max="100000" step="1" inputmode="numeric" value="${m.meta?.alvo ?? ""}"></div>
           </div>
-          <div class="campo"><label for="s-meta">Título da meta</label><input id="s-meta" value="${esc(m.meta?.titulo ?? "")}" maxlength="60"></div>
-          <div class="campo"><label for="s-boas">Mensagem de boas-vindas no chat</label><input id="s-boas" maxlength="120" placeholder="Bem-vindo(a) à minha sala! 💜"></div>
-          <div class="campo"><label for="s-bloq">Palavras bloqueadas no chat (separadas por vírgula)</label><input id="s-bloq" placeholder="ex.: telefone, whatsapp"></div>
-          <button class="btn btn-primario" data-salvar>Salvar</button>
+          ${m.meta ? `<div class="privado-info" style="margin:-4px 0 14px"><div><span>Progresso da meta</span><strong>${Math.min(m.meta.atual ?? 0, m.meta.alvo)} de ${m.meta.alvo} créditos</strong></div></div>` : ""}
+          <span class="ajuda" style="display:block;color:var(--texto-2);font-size:.8rem;margin:-6px 0 14px">Para tirar a meta, apague o título e o valor. Trocar o título ou o valor recomeça a contagem do zero.</span>
+          <div class="campo"><label for="s-boas">Mensagem de boas-vindas no chat</label><input id="s-boas" maxlength="120" value="${esc(m.boasVindas || "")}" placeholder="Bem-vindo(a) à minha sala! 💜"></div>
+          <div class="campo"><label for="s-bloq">Palavras bloqueadas no chat (separadas por vírgula)</label><input id="s-bloq" value="${esc((m.bloqueadas || []).join(", "))}" placeholder="ex.: telefone, whatsapp">
+            <span class="ajuda">Mensagens e recados com essas palavras não são enviados. Até 30.</span></div>
+          <button class="btn btn-primario" id="salvar-sala">Salvar</button>
         </form>`
     };
 
@@ -279,7 +286,7 @@
     });
     conteudo.addEventListener("click", (e) => {
       if (e.target.closest("[data-recarregar]")) { e.preventDefault(); abrir(); }
-      if (e.target.closest("[data-salvar]")) { e.preventDefault(); LV.toast("Salvar fica ativo quando o backend estiver pronto. Por enquanto edite assets/js/modelos.js."); }
+      if (e.target.closest("[data-salvar]")) { e.preventDefault(); LV.toast("Os dados de saque ainda são combinados com a equipe do site."); }
       const c = e.target.closest("[data-copiar]");
       if (c) { navigator.clipboard?.writeText(document.getElementById(c.dataset.copiar).value); LV.toast("Copiado!"); }
       if (e.target.id === "mostrar") {
@@ -307,6 +314,53 @@
         ? "Sua sala aparece como ao vivo no site. Deixe esta página aberta enquanto estiver transmitindo."
         : "Ligue quando começar a transmitir. Sua sala passa a aparecer como ao vivo no site.";
     });
+    // ---------- Configurar sala (api/modelo-sala.php) ----------
+    conteudo.addEventListener("submit", async (e) => {
+      if (e.target.id !== "form-sala") return;
+      e.preventDefault();
+      const valor = (id) => document.getElementById(id).value.trim();
+      const inteiro = (id) => (valor(id) === "" ? null : Number(valor(id)));
+      const vistos = new Set();
+      const sala = {
+        preco_privado: inteiro("s-privado"),
+        meta_titulo: valor("s-meta"),
+        meta_alvo: inteiro("s-alvo"),
+        boas_vindas: valor("s-boas"),
+        bloqueadas: valor("s-bloq").split(",").map((t) => t.trim()).filter((t) => t && !vistos.has(t.toLowerCase()) && vistos.add(t.toLowerCase()))
+      };
+      ["s-privado", "s-meta", "s-alvo", "s-boas", "s-bloq"].forEach((id) => marcarErro(id, ""));
+      const campoDoErro = { preco_privado: "s-privado", meta_titulo: "s-meta", meta_alvo: "s-alvo", boas_vindas: "s-boas", bloqueadas: "s-bloq" };
+      const botao = document.getElementById("salvar-sala");
+      botao.disabled = true;
+      try {
+        if (S.modoDemo) {
+          const erro = (campo, msg) => { throw Object.assign(new Error(msg), { campo }); };
+          if (!Number.isInteger(sala.preco_privado) || sala.preco_privado < 1 || sala.preco_privado > 500) erro("preco_privado", "O preço do privado vai de 1 a 500 créditos por minuto.");
+          const temMeta = sala.meta_titulo !== "" || sala.meta_alvo !== null;
+          if (temMeta && !sala.meta_titulo) erro("meta_titulo", "Dê um título à meta (ou deixe título e valor vazios).");
+          if (temMeta && !(Number.isInteger(sala.meta_alvo) && sala.meta_alvo >= 1)) erro("meta_alvo", "A meta vai de 1 a 100000 créditos.");
+          const mesma = m.meta && temMeta && m.meta.titulo === sala.meta_titulo && m.meta.alvo === sala.meta_alvo;
+          if (temMeta && !mesma) LV.gravar("lv_meta_" + m.slug, 0); // meta nova começa do zero
+          LVSalas.salvarDemo(m.slug, {
+            preco_privado: sala.preco_privado,
+            meta: temMeta ? { titulo: sala.meta_titulo, alvo: sala.meta_alvo, atual: mesma ? m.meta.atual ?? 0 : 0 } : null,
+            boas_vindas: sala.boas_vindas,
+            bloqueadas: sala.bloqueadas.map((t) => t.toLowerCase())
+          });
+        } else {
+          const r = await LV.api("modelo-sala.php", sala);
+          LVSalas.aplicar({ [m.slug]: r.sala });
+        }
+        LV.toast("Sala salva! Já vale no site.");
+        conteudo.innerHTML = secoes.sala();
+      } catch (err) {
+        if (err.status === 401) return location.replace("modelo-entrar.html");
+        if (err.campo) marcarErro(campoDoErro[err.campo] || err.campo, err.message);
+        LV.toast(err.message);
+        botao.disabled = false;
+      }
+    });
+
     // ---------- Meu perfil (api/modelo-perfil.php) ----------
     function marcarErro(id, msg) {
       const campo = document.getElementById(id)?.closest(".campo");
@@ -380,7 +434,8 @@
       }
       m = conta && window.MODELOS.find((x) => x.slug === conta.slug);
       if (!m) return location.replace("modelo-entrar.html");
-      await LVPerfis.carregar(); // o formulário abre com o perfil salvo, não com o de modelos.js
+      await LVPerfis.carregar(); // os formulários abrem com o que está salvo, não com o de modelos.js
+      await LVSalas.carregar();
       await carregarAoVivo();
       // Painel reaberto com a sala ligada: volta a avisar o servidor que continua aberto.
       if (aoVivo && !S.modoDemo) await definirAoVivo(true).catch(() => {});

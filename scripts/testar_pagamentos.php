@@ -41,7 +41,8 @@ function verificar(string $nome, mixed $obtido, mixed $esperado): void
 function banco_novo(): PDO
 {
     $pdo = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
-    $sql = (string) file_get_contents(dirname(__DIR__) . '/api/schema.sql');
+    // schema-modelos.sql também: o api/gastar.php lê o preço do privado da configuração da sala.
+    $sql = (string) file_get_contents(dirname(__DIR__) . '/api/schema.sql') . "\n" . file_get_contents(dirname(__DIR__) . '/api/schema-modelos.sql');
     // Do dialeto do MySQL para o do SQLite, só o necessário: sem ENGINE, sem KEY avulsa, sem FOREIGN KEY nomeada.
     $sql = preg_replace('/--[^\n]*/', '', $sql);
     $sql = preg_replace('/\)\s*ENGINE=[^;]+;/', ');', $sql);

@@ -304,3 +304,132 @@ function lv_perfil_salvar(string $slug, array $perfil): array
     }
     return lv_perfis()[$slug];
 }
+
+// ----------------------------------------------------------------------------- configuração da sala
+
+/** Limites de "Configurar sala" (o painel usa os mesmos). */
+const LV_SALA_LIMITES = ['preco_min' => 1, 'preco_max' => 500, 'meta_titulo' => 60, 'meta_alvo_max' => 100000,
+    'boas_vindas' => 120, 'palavra' => 30, 'palavras' => 30];
+
+function lv_sala_linha(string $slug): ?array
+{
+    $stmt = lv_db()->prepare('SELECT * FROM lv_modelos_sala WHERE slug = ?');
+    $stmt->execute([$slug]);
+    return $stmt->fetch() ?: null;
+}
+
+/**
+ * Preço do show privado em créditos por minuto: o da sala salva no painel, ou o padrão de LV_MODELOS.
+ * É o que api/gastar.php cobra; o navegador nunca escolhe o preço.
+ */
+function lv_preco_privado(string $slug): int
+{
+    $padrao = (int) (LV_MODELOS[$slug]['preco_privado'] ?? 0);
+    try {
+        $linha = lv_sala_linha($slug);
+    } catch (PDOException $e) {
+        // Banco sem api/schema-modelos.sql importado: cobra o padrão e avisa no log, sem derrubar a sala.
+        error_log('[pagamentos] lv_modelos_sala indisponível, preço padrão: ' . $e->getMessage());
+        return $padrao;
+    }
+    return $linha ? (int) $linha['preco_privado'] : $padrao;
+}
+
+/** Créditos de gorjeta que a modelo recebeu em lançamentos do extrato com id maior que $depoisDoId. */
+function lv_gorjetas_desde(string $slug, ?int $depoisDoId): int
+{
+    if ($depoisDoId === null) {
+        return 0;
+    }
+    $stmt = lv_db()->prepare("SELECT COALESCE(SUM(-creditos), 0) FROM lv_extrato WHERE modelo = ? AND motivo = 'gorjeta' AND id > ?");
+    $stmt->execute([$slug, $depoisDoId]);
+    return (int) $stmt->fetchColumn();
+}
+
+/** Último id do extrato: o ponto de partida de uma meta nova. */
+function lv_ultimo_lancamento(): int
+{
+    return (int) lv_db()->query('SELECT COALESCE(MAX(id), 0) FROM lv_extrato')->fetchColumn();
+}
+
+/** Configuração pública de cada sala de LV_MODELOS (padrões para quem nunca salvou). */
+function lv_salas(): array
+{
+    $saida = [];
+    foreach (LV_MODELOS as $slug => $modelo) {
+        $l = lv_sala_linha($slug);
+        $meta = null;
+        if ($l && $l['meta_titulo'] !== null && $l['meta_alvo'] !== null) {
+            $meta = ['titulo' => (string) $l['meta_titulo'], 'alvo' => (int) $l['meta_alvo'], 'atual' => lv_gorjetas_desde($slug, $l['meta_desde_id'] === null ? null : (int) $l['meta_desde_id'])];
+        }
+        $saida[$slug] = [
+            'preco_privado' => $l ? (int) $l['preco_privado'] : (int) $modelo['preco_privado'],
+            'meta' => $meta,
+            'boas_vindas' => $l ? (string) $l['boas_vindas'] : '',
+            'bloqueadas' => $l ? (json_decode((string) $l['bloqueadas'], true) ?: []) : [],
+            'salva' => $l !== null,
+        ];
+    }
+    return $saida;
+}
+
+/** Confere "Configurar sala". Devolve [config, null] ou [null, [campo, mensagem]]. Meta: título e valor juntos, ou os dois vazios. */
+function lv_sala_validar(array $b): array
+{
+    $l = LV_SALA_LIMITES;
+    $preco = $b['preco_privado'] ?? null;
+    if (!is_int($preco) || $preco < $l['preco_min'] || $preco > $l['preco_max']) {
+        return [null, ['preco_privado', "O preço do privado vai de {$l['preco_min']} a {$l['preco_max']} créditos por minuto."]];
+    }
+    $titulo = lv_texto(is_string($b['meta_titulo'] ?? null) ? $b['meta_titulo'] : '', 1000);
+    $alvo = $b['meta_alvo'] ?? null;
+    if ($titulo === '' && ($alvo === null || $alvo === '')) {
+        $titulo = null;
+        $alvo = null;
+    } else {
+        if ($titulo === '' || mb_strlen($titulo) > $l['meta_titulo']) {
+            return [null, ['meta_titulo', "Dê um título à meta, com até {$l['meta_titulo']} caracteres (ou deixe título e valor vazios)."]];
+        }
+        if (!is_int($alvo) || $alvo < 1 || $alvo > $l['meta_alvo_max']) {
+            return [null, ['meta_alvo', "A meta vai de 1 a {$l['meta_alvo_max']} créditos."]];
+        }
+    }
+    $boas = lv_texto(is_string($b['boas_vindas'] ?? null) ? $b['boas_vindas'] : '', 1000);
+    if (mb_strlen($boas) > $l['boas_vindas']) {
+        return [null, ['boas_vindas', "A mensagem de boas-vindas pode ter até {$l['boas_vindas']} caracteres."]];
+    }
+    $bloqueadas = lv_perfil_lista($b['bloqueadas'] ?? [], $l['palavras'], $l['palavra']);
+    if ($bloqueadas === null) {
+        return [null, ['bloqueadas', "Até {$l['palavras']} palavras bloqueadas, cada uma com até {$l['palavra']} caracteres."]];
+    }
+    $bloqueadas = array_values(array_unique(array_map('mb_strtolower', $bloqueadas)));
+    return [['preco_privado' => $preco, 'meta_titulo' => $titulo, 'meta_alvo' => $alvo, 'boas_vindas' => $boas, 'bloqueadas' => $bloqueadas], null];
+}
+
+/** Salva a configuração. A meta recomeça do zero (a partir do último lançamento) quando o título ou o valor muda. */
+function lv_sala_salvar(string $slug, array $c): array
+{
+    $pdo = lv_db();
+    $agora = lv_agora();
+    $antes = lv_sala_linha($slug);
+    $mesmaMeta = $antes && $c['meta_titulo'] !== null
+        && $antes['meta_titulo'] === $c['meta_titulo'] && (int) $antes['meta_alvo'] === $c['meta_alvo'];
+    $desde = $c['meta_titulo'] === null ? null : ($mesmaMeta ? (int) $antes['meta_desde_id'] : lv_ultimo_lancamento());
+    $valores = [$c['preco_privado'], $c['meta_titulo'], $c['meta_alvo'], $desde, $c['boas_vindas'],
+        json_encode($c['bloqueadas'], JSON_UNESCAPED_UNICODE), $agora, $slug];
+    if ($antes) {
+        $pdo->prepare('UPDATE lv_modelos_sala SET preco_privado = ?, meta_titulo = ?, meta_alvo = ?, meta_desde_id = ?, boas_vindas = ?, bloqueadas = ?, atualizado_em = ? WHERE slug = ?')
+            ->execute($valores);
+    } else {
+        try {
+            $pdo->prepare('INSERT INTO lv_modelos_sala (preco_privado, meta_titulo, meta_alvo, meta_desde_id, boas_vindas, bloqueadas, atualizado_em, slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute($valores);
+        } catch (PDOException $e) {
+            if (!lv_e_duplicado($e)) {
+                throw $e;
+            }
+            return lv_sala_salvar($slug, $c); // outra aba salvou primeiro: agora existe, atualiza
+        }
+    }
+    return lv_salas()[$slug];
+}

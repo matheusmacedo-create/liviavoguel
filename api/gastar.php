@@ -1,11 +1,12 @@
 <?php
 /**
  * POST { tipo: "gorjeta"|"privado", modelo: <slug>, creditos? } → { saldo } (402 sem saldo).
- * Gorjeta: `creditos` inteiro de 1 a LV_GORJETA_MAXIMA. Privado: um minuto, pelo preço de lib/modelos.php
- * (o `creditos` do navegador é ignorado). O débito é feito aqui, nunca no navegador.
+ * Gorjeta: `creditos` inteiro de 1 a LV_GORJETA_MAXIMA. Privado: um minuto, pelo preço que a modelo definiu
+ * em "Configurar sala" (ou o padrão de lib/modelos.php); o `creditos` do navegador é ignorado. O débito é feito aqui, nunca no navegador.
  */
 declare(strict_types=1);
 require_once __DIR__ . '/lib/base.php';
+require_once __DIR__ . '/lib/modelo-conta.php';
 
 $b = lv_ler_json();
 $usuarioId = lv_exigir_login();
@@ -22,7 +23,7 @@ if ($tipo === 'gorjeta') {
     }
     $descricao = 'Gorjeta para ' . $modelo['nome'];
 } else {
-    $creditos = (int) $modelo['preco_privado'];
+    $creditos = lv_preco_privado($slug);
     $descricao = 'Show privado com ' . $modelo['nome'] . ' (1 minuto)';
 }
 $saldo = lv_debitar($usuarioId, $creditos, $tipo, $descricao, $slug);
