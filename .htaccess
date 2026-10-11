@@ -1,0 +1,14 @@
+# Raiz do site na Hostinger (o repositório é clonado direto na pasta do domínio).
+Options -Indexes
+ErrorDocument 404 /404.html
+
+# Arquivos do repositório que não são do site: testes, documentação interna e o próprio Git.
+RedirectMatch 404 ^/(\.git|scripts|docs)(/|$)
+<FilesMatch "^(README\.md|\.gitignore|\.htaccess)$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
