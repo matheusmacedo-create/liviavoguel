@@ -17,6 +17,7 @@
 
   <script src="assets/js/config.js"></script>
   <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/ao-vivo.js"></script>
   <script src="assets/js/app.js"></script>
   <script>
     LV.montar("sala");
@@ -57,7 +58,7 @@
             <h1>${esc(m.nome)}</h1>
             <small>${m.idade} anos · ${esc(m.cidade)}</small>
           </div>
-          <span class="${m.online ? "badge-online" : "badge-offline"}">${m.online ? "Ao vivo" : "Offline"}</span>
+          <span id="selo-ao-vivo" class="${m.online ? "badge-online" : "badge-offline"}">${m.online ? "Ao vivo" : "Offline"}</span>
           <div class="acoes">
             <button class="btn btn-pequeno" id="seguir">♡ Seguir</button>
           </div>
@@ -275,6 +276,13 @@
     });
     if (u && LV.ler("lv_seguir_" + m.slug) === "1") $("seguir").textContent = "♥ Seguindo";
     window.addEventListener("beforeunload", () => privado?.encerrar());
+
+    // A modelo ligou ou desligou a sala: atualiza o selo e o player (sem mexer num privado em andamento).
+    document.addEventListener("lv:ao-vivo", () => {
+      $("selo-ao-vivo").className = m.online ? "badge-online" : "badge-offline";
+      $("selo-ao-vivo").textContent = m.online ? "Ao vivo" : "Offline";
+      if (!privado) $("player").innerHTML = player();
+    });
   </script>
 </body>
 </html>

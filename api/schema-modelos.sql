@@ -13,3 +13,12 @@ CREATE TABLE IF NOT EXISTS lv_modelos_contas (
   UNIQUE KEY uq_modelos_contas_email (email),
   UNIQUE KEY uq_modelos_contas_slug (slug)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Status "ao vivo" de cada modelo, ligado e desligado no painel. Só vale enquanto o painel avisa que
+-- continua aberto (visto_em recente); se a modelo fechar sem desligar, o site a mostra offline sozinho.
+CREATE TABLE IF NOT EXISTS lv_modelos_ao_vivo (
+  slug VARCHAR(40) NOT NULL PRIMARY KEY,
+  online TINYINT(1) NOT NULL DEFAULT 0,
+  desde DATETIME NULL,                       -- quando entrou ao vivo (null = offline)
+  visto_em DATETIME NOT NULL                 -- último aviso do painel
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

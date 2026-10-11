@@ -41,6 +41,7 @@
 
   <script src="assets/js/config.js"></script>
   <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/ao-vivo.js"></script>
   <script src="assets/js/app.js"></script>
   <script>
     LV.montar("inicio");
@@ -48,6 +49,7 @@
     const modelos = window.MODELOS;
     const destaque = modelos.find((m) => m.destaque) || modelos[0];
 
+    function desenharHero() {
     document.getElementById("hero").innerHTML = `
       <div class="hero-card">
         <div class="hero-foto">
@@ -69,6 +71,9 @@
           </div>
         </div>
       </div>`;
+    }
+    desenharHero();
+    let filtro = "todas";
 
     // A grade só aparece com 2 ou mais modelos
     if (modelos.length > 1) {
@@ -82,10 +87,13 @@
       document.getElementById("filtros").addEventListener("click", (e) => {
         const b = e.target.closest("button"); if (!b) return;
         document.querySelectorAll("#filtros button").forEach((x) => x.classList.toggle("ativo", x === b));
-        render(b.dataset.f);
+        render((filtro = b.dataset.f));
       });
-      render("todas");
+      render(filtro);
+      document.addEventListener("lv:ao-vivo", () => render(filtro));
     }
+    // Status vindo do servidor (ou do painel, no modo demonstração)
+    document.addEventListener("lv:ao-vivo", desenharHero);
   </script>
 </body>
 </html>

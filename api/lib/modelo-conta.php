@@ -149,3 +149,56 @@ function lv_modelo_lancamentos(string $slug, ?string $de = null, ?string $ate = 
     ], $stmt->fetchAll());
 }
 
+
+// ----------------------------------------------------------------------------- ao vivo
+
+/** Sem aviso do painel por mais que isto (em segundos), a modelo aparece offline. O painel avisa a cada minuto. */
+const LV_AO_VIVO_VALIDADE = 300;
+
+/** Status de todas as modelos de LV_MODELOS: [slug => ['online' => bool, 'desde' => ISO|null]]. */
+function lv_ao_vivo_todas(): array
+{
+    $limite = gmdate('Y-m-d H:i:s', time() - LV_AO_VIVO_VALIDADE);
+    $linhas = lv_db()->query('SELECT slug, online, desde, visto_em FROM lv_modelos_ao_vivo')->fetchAll();
+    $porSlug = array_column($linhas, null, 'slug');
+    $saida = [];
+    foreach (array_keys(LV_MODELOS) as $slug) {
+        $l = $porSlug[$slug] ?? null;
+        $online = $l !== null && (int) $l['online'] === 1 && $l['visto_em'] >= $limite;
+        $saida[$slug] = [
+            'online' => $online,
+            'desde' => $online && $l['desde'] ? gmdate('Y-m-d\TH:i:s\Z', (int) strtotime($l['desde'] . ' UTC')) : null,
+        ];
+    }
+    return $saida;
+}
+
+/**
+ * Liga, desliga ou renova (aviso do painel) o status da modelo. Ligar quando já estava ao vivo mantém o `desde`.
+ * UPDATE e, se não havia linha, INSERT: funciona igual no MySQL e no SQLite dos testes.
+ */
+function lv_ao_vivo_definir(string $slug, bool $online): array
+{
+    $pdo = lv_db();
+    $agora = lv_agora();
+    $atual = lv_ao_vivo_todas()[$slug] ?? ['online' => false];
+    $desde = $online ? ($atual['online'] ? null : $agora) : null; // null no UPDATE abaixo = mantém
+    $sql = $online
+        ? 'UPDATE lv_modelos_ao_vivo SET online = 1, desde = COALESCE(?, desde), visto_em = ? WHERE slug = ?'
+        : 'UPDATE lv_modelos_ao_vivo SET online = 0, desde = NULL, visto_em = ? WHERE slug = ?';
+    $params = $online ? [$desde, $agora, $slug] : [$agora, $slug];
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    if ($stmt->rowCount() === 0) {
+        try {
+            $pdo->prepare('INSERT INTO lv_modelos_ao_vivo (slug, online, desde, visto_em) VALUES (?, ?, ?, ?)')
+                ->execute([$slug, $online ? 1 : 0, $online ? $agora : null, $agora]);
+        } catch (PDOException $e) {
+            if (!lv_e_duplicado($e)) {
+                throw $e;
+            }
+            $pdo->prepare($sql)->execute($params); // outra aba criou a linha ao mesmo tempo
+        }
+    }
+    return lv_ao_vivo_todas()[$slug];
+}
