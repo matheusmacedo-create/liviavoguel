@@ -120,3 +120,15 @@ CREATE TABLE IF NOT EXISTS lv_modelos_fotos (
   criado_em DATETIME NOT NULL,
   KEY ix_fotos_modelo (slug, ordem)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Contas da equipe (equipe.html): marcam saques como pagos ou recusados e bloqueiam ou reativam modelos.
+-- Criadas só por scripts/criar_conta_equipe.php (que imprime o INSERT). Login separado do de cliente e do de modelo.
+CREATE TABLE IF NOT EXISTS lv_equipe_contas (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(190) NOT NULL,
+  senha_hash VARCHAR(255) NOT NULL,
+  ativa TINYINT(1) NOT NULL DEFAULT 1,
+  criado_em DATETIME NOT NULL,
+  ultimo_login_em DATETIME NULL,
+  UNIQUE KEY uq_equipe_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

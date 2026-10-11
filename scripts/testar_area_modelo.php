@@ -25,6 +25,7 @@ require $raiz . '/api/lib/modelo-conta.php';
 require $raiz . '/api/lib/chat.php';
 require $raiz . '/api/lib/saques.php';
 require $raiz . '/api/lib/fotos.php';
+require $raiz . '/api/lib/equipe.php';
 
 $falhas = 0;
 $total = 0;
@@ -809,6 +810,110 @@ while (lv_fotos_contar('livia-voguel') < LV_FOTO_MAX_POR_MODELO) {
 [$s, $c] = $enviarFoto($imagem(800, 600));
 verificar('limite de 12 fotos: 409', [$s, $c['erro']], [409, 'Você já tem 12 fotos. Apague uma para enviar outra.']);
 file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
+
+// ============================================================================= painel da equipe
+recomecar();
+$idLivia = criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$pdo = lv_db();
+$senhaEquipe = 'senha-da-equipe-123';
+$pdo->prepare('INSERT INTO lv_equipe_contas (email, senha_hash, ativa, criado_em) VALUES (?, ?, 1, ?)')
+    ->execute(['equipe@exemplo.com.br', password_hash($senhaEquipe, PASSWORD_DEFAULT), lv_agora()]);
+$idEquipe = (int) $pdo->lastInsertId();
+$entrarEquipe = static fn(string $email, string $senha) => chamar('equipe-entrar.php', 'POST', ['email' => $email, 'senha' => $senha]);
+$_GET = [];
+
+// separação dos logins
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s, $c] = chamar('equipe.php');
+verificar('modelo logada não abre o painel da equipe: 401', [$s, $c['login_equipe'] ?? null], [401, true]);
+$_SESSION = ['usuario_id' => 7];
+[$s] = chamar('equipe.php');
+verificar('cliente logado não abre o painel da equipe: 401', $s, 401);
+$_SESSION = [];
+[$s] = $entrarEquipe('livia@exemplo.com.br', $senhaBoa);
+verificar('conta de modelo não entra como equipe', $s, 401);
+[$s] = $entrarEquipe('equipe@exemplo.com.br', 'errada-123456');
+verificar('senha errada da equipe: 401', $s, 401);
+[$s] = $entrarEquipe(' EQUIPE@exemplo.com.br ', $senhaEquipe);
+verificar('login da equipe: 200', $s, 200);
+verificar('login da equipe não vira modelo nem cliente', [$_SESSION['modelo_id'] ?? null, $_SESSION['usuario_id'] ?? null], [null, null]);
+[$s, $c] = chamar('modelo-ganhos.php');
+verificar('equipe não abre o painel da modelo', $s, 401);
+[, $c] = chamar('equipe-eu.php');
+verificar('equipe-eu diz logada', [$c['logado'], $c['equipe']['email']], [true, 'equipe@exemplo.com.br']);
+$_SESSION['equipe_desde'] = time() - LV_EQUIPE_SESSAO_MAXIMA - 1;
+[$s] = chamar('equipe.php');
+verificar('sessão da equipe vence em 8 h', $s, 401);
+
+$_SESSION = [];
+for ($i = 0; $i < LV_EQUIPE_ERROS_LOGIN; $i++) { $entrarEquipe('equipe@exemplo.com.br', "chute-$i-xxxxxx"); }
+[$s] = $entrarEquipe('equipe@exemplo.com.br', $senhaEquipe);
+verificar('5 erros no login da equipe: espera, mesmo com a senha certa', $s, 429);
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'equipe_login_erro'");
+
+// saques
+$pdo->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES ('fa@exemplo.com.br', 'fa_1', 'x', '2026-01-01 00:00:00')");
+$fa = (int) $pdo->lastInsertId();
+lv_lancar($fa, -500, 'gorjeta', null, 'Gorjeta', 'livia-voguel'); // R$ 100,00 para a modelo
+lv_pix_salvar('livia-voguel', 'cpf', '52998224725');
+[$saque] = lv_saque_pedir($idLivia, 'livia-voguel');
+$_SESSION = [];
+$entrarEquipe('equipe@exemplo.com.br', $senhaEquipe);
+[$s, $c] = chamar('equipe.php');
+verificar('equipe vê o saque pendente com a chave Pix', [$s, count($c['saques']['pendentes']), $c['saques']['pendentes'][0]['pix']['chave'], $c['saques']['pendentes'][0]['centavos']],
+    [200, 1, '52998224725', 10000]);
+verificar('equipe vê a conta da modelo', [$c['modelos'][0]['slug'], $c['modelos'][0]['ativa'], $c['modelos'][0]['disponivel']['centavos']], ['livia-voguel', true, 0]);
+[$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'saque_recusado', 'id' => $saque['id'], 'observacao' => '']);
+verificar('recusar sem motivo: 422', $s, 422);
+[$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'saque_pago', 'id' => $saque['id'], 'observacao' => 'Pix E2E123']);
+verificar('marcar como pago: 200 e sai dos pendentes', [$s, count($c['saques']['pendentes']), $c['saques']['resolvidos'][0]['status'], $c['saques']['resolvidos'][0]['observacao']],
+    [200, 0, 'pago', 'Pix E2E123']);
+[$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'saque_recusado', 'id' => $saque['id'], 'observacao' => 'erro']);
+verificar('saque já pago não pode ser recusado: 409', [$s, $c['erro']], [409, 'Esse saque já foi marcado como pago.']);
+[$s] = chamar('equipe.php', 'POST', ['acao' => 'saque_pago', 'id' => 99999]);
+verificar('saque que não existe: 404', $s, 404);
+lv_lancar($fa, -400, 'gorjeta', null, 'Gorjeta', 'livia-voguel');
+[$saque2] = lv_saque_pedir($idLivia, 'livia-voguel');
+[$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'saque_recusado', 'id' => $saque2['id'], 'observacao' => 'Chave não confere']);
+verificar('recusar com motivo: os créditos voltam ao disponível da modelo', [$s, $c['saques']['resolvidos'][0]['status'], $c['modelos'][0]['disponivel']['creditos']], [200, 'recusado', 400]);
+
+// bloquear e reativar modelo
+$sessaoEquipe = $_SESSION;
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+lv_ao_vivo_definir('livia-voguel', true);
+$sessaoLivia = $_SESSION;
+$_SESSION = $sessaoEquipe;
+[$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'modelo_bloquear', 'id' => $idLivia]);
+verificar('bloquear modelo: conta inativa e sala desligada', [$s, $c['modelos'][0]['ativa'], $c['modelos'][0]['online']], [200, false, false]);
+$_SESSION = $sessaoLivia;
+[$s] = chamar('modelo-ganhos.php');
+verificar('modelo bloqueada perde a sessão aberta', $s, 401);
+[$s] = $entrar('livia@exemplo.com.br', $senhaBoa);
+verificar('modelo bloqueada não entra', $s, 401);
+$_SESSION = $sessaoEquipe;
+[$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'modelo_reativar', 'id' => $idLivia]);
+verificar('reativar modelo', [$s, $c['modelos'][0]['ativa']], [200, true]);
+$_SESSION = [];
+[$s] = $entrar('livia@exemplo.com.br', $senhaBoa);
+verificar('modelo reativada entra de novo', $s, 200);
+
+$_SESSION = $sessaoEquipe;
+[$s] = chamar('equipe.php', 'POST', ['acao' => 'modelo_bloquear', 'id' => 99999]);
+verificar('modelo que não existe: 404', $s, 404);
+[$s] = chamar('equipe.php', 'POST', ['acao' => 'apagar_tudo', 'id' => 1]);
+verificar('ação inválida: 422', $s, 422);
+[$s] = chamar('equipe.php', 'POST', ['acao' => 'saque_pago', 'id' => '1']);
+verificar('id em texto: 422', $s, 422);
+[$s] = chamar('equipe.php', 'POST', ['acao' => 'modelo_bloquear', 'id' => $idLivia], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('ação vinda de outro site: 403', $s, 403);
+verificar('ações da equipe ficam registradas', (int) $pdo->query("SELECT COUNT(*) FROM lv_eventos WHERE tipo = 'equipe_acao'")->fetchColumn(), 4);
+$pdo->exec('UPDATE lv_equipe_contas SET ativa = 0');
+[$s] = chamar('equipe.php');
+verificar('conta da equipe desativada perde o acesso', $s, 401);
+[$s] = chamar('equipe-sair.php', 'POST');
+verificar('sair do painel da equipe', $s, 200);
 
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
