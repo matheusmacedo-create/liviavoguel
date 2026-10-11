@@ -16,7 +16,7 @@ if (PHP_SAPI !== 'cli') {
 const LV_TESTE = true;
 $raiz = dirname(__DIR__);
 $configTeste = tempnam(sys_get_temp_dir(), 'lv-config-');
-file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0];");
 putenv("LV_CONFIG_ARQUIVO=$configTeste");
 register_shutdown_function(static fn() => @unlink($configTeste));
 $_SERVER['REQUEST_METHOD'] = 'CLI';
@@ -55,6 +55,13 @@ function banco_novo(): PDO
         $pdo->exec($sql);
     }
     return $pdo;
+}
+
+/** Sessão de cliente como o login (lv_logar) deixa: com a marca da senha atual. */
+function sessao_cliente(int $id): array
+{
+    $hash = (string) lv_db()->query('SELECT senha_hash FROM lv_usuarios WHERE id = ' . $id)->fetchColumn();
+    return ['usuario_id' => $id, 'usuario_marca' => lv_marca_senha($hash)];
 }
 
 /** Roda um endpoint como o Apache rodaria e devolve [status, corpo]. A sessão ($_SESSION) passa de uma chamada para a outra. */
@@ -199,9 +206,22 @@ verificar('senha atual errada: 400 no campo certo', [$s, $c['campo']], [400, 'se
 verificar('senha nova curta: 400', [$s, $c['campo']], [400, 'senha_nova']);
 [$s, $c] = chamar('modelo-senha.php', 'POST', ['senha_atual' => $senhaBoa, 'senha_nova' => $senhaBoa]);
 verificar('senha nova igual à atual: 400', [$s, $c['campo']], [400, 'senha_nova']);
+$outroAparelho = $_SESSION; // a mesma conta aberta em outro lugar (computador emprestado, cookie roubado)
 [$s] = chamar('modelo-senha.php', 'POST', ['senha_atual' => $senhaBoa, 'senha_nova' => 'nova-senha-789']);
 verificar('troca de senha: 200', $s, 200);
 verificar('troca de senha: continua logada', isset($_SESSION['modelo_id']), true);
+[, $c] = chamar('modelo-eu.php');
+verificar('troca de senha: esta sessão segue valendo', $c['logado'], true);
+$estaSessao = $_SESSION;
+$_SESSION = $outroAparelho;
+[, $c] = chamar('modelo-eu.php');
+verificar('troca de senha: a sessão aberta com a senha antiga cai', $c['logado'], false);
+// Redefinição pela equipe (scripts/criar_conta_modelo.php grava um hash novo): derruba todas as sessões.
+$_SESSION = $estaSessao;
+lv_db()->prepare('UPDATE lv_modelos_contas SET senha_hash = ? WHERE slug = ?')->execute([password_hash('redefinida-123', PASSWORD_DEFAULT), 'livia-voguel']);
+[, $c] = chamar('modelo-eu.php');
+verificar('senha redefinida pela equipe: a sessão aberta cai', $c['logado'], false);
+lv_db()->prepare('UPDATE lv_modelos_contas SET senha_hash = ? WHERE slug = ?')->execute([password_hash('nova-senha-789', PASSWORD_DEFAULT), 'livia-voguel']);
 
 $_SESSION = [];
 [$s] = $entrar('livia@exemplo.com.br', $senhaBoa);
@@ -252,8 +272,7 @@ $lancar(-50, 'gorjeta', 'outra-modelo', $hoje);    // gorjeta para outra modelo:
 $somar = static fn(callable $filtro): int => array_sum(array_map(static fn($r) => $r[0], array_filter($recebidos, $filtro)));
 $repasse = LV_MODELO_REPASSE_PADRAO;
 
-$_SESSION = [];
-$_SESSION['usuario_id'] = $fa;
+$_SESSION = sessao_cliente($fa);
 [$s, $c] = chamar('modelo-ganhos.php');
 verificar('ganhos sem login de modelo (cliente logado): 401', [$s, $c['login_modelo'] ?? null], [401, true]);
 
@@ -289,10 +308,10 @@ $_GET = ['periodo' => ['7d']];
 verificar('período em lista não quebra', $s, 200);
 $_GET = [];
 
-file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_REPASSE_CENTAVOS' => 35];");
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0, 'MODELO_REPASSE_CENTAVOS' => 35];");
 [, $g] = chamar('modelo-ganhos.php');
 verificar('repasse configurável no config.php', [$g['repasse_centavos'], $g['resumo']['hoje']['centavos']], [35, 30 * 35]);
-file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0];");
 
 [$s] = chamar('modelo-ganhos.php', 'POST', []);
 verificar('ganhos por POST: 405', $s, 405);
@@ -431,9 +450,13 @@ $pdo->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALU
 $fa = (int) $pdo->lastInsertId();
 lv_lancar($fa, 500, 'compra', null, 'Pacote de 500 créditos');
 $sessaoModelo = $_SESSION;
-$_SESSION = ['usuario_id' => $fa];
+$_SESSION = sessao_cliente($fa);
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0, 'PRIVADO_ATIVO' => true];");
+lv_ao_vivo_definir('livia-voguel', true);
 [$s, $c] = chamar('gastar.php', 'POST', ['tipo' => 'privado', 'modelo' => 'livia-voguel', 'creditos' => 1]);
 verificar('privado cobra o preço que a modelo definiu', [$s, $c['creditos'], $c['saldo']], [200, 35, 465]);
+lv_ao_vivo_definir('livia-voguel', false);
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0];");
 
 // Meta conta só as gorjetas depois que ela foi definida.
 [, $c] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 40]);
@@ -492,7 +515,7 @@ verificar('chat começa vazio', [$s, $c['mensagens'], $c['ultimo_id']], [200, []
 $_SESSION = [];
 [$s, $c] = $enviar('oi');
 verificar('mandar mensagem sem login: 401', [$s, $c['login'] ?? null], [401, true]);
-$_SESSION = ['usuario_id' => $fa];
+$_SESSION = sessao_cliente($fa);
 [$s] = $enviar('oi');
 verificar('mandar mensagem com a modelo offline: 409', $s, 409);
 
@@ -522,7 +545,7 @@ verificar('mensagem vazia: 422', $s, 422);
 $_SESSION = [];
 $entrar('livia@exemplo.com.br', $senhaBoa);
 chamar('modelo-sala.php', 'POST', ['preco_privado' => 20, 'meta_titulo' => '', 'meta_alvo' => null, 'boas_vindas' => '', 'bloqueadas' => ['telefone', 'WhatsApp']]);
-$_SESSION = ['usuario_id' => $fa];
+$_SESSION = sessao_cliente($fa);
 $esperar();
 [$s, $c] = $enviar('me passa o TELEFÔNE?');
 verificar('palavra bloqueada com maiúscula e acento: 422', [$s, $c['campo'] ?? null], [422, 'texto']);
@@ -577,7 +600,7 @@ $m3 = lv_chat_postar('livia-voguel', $bia, 'bia_rj', 'msg', 'outra besteira');
 $moderar = static fn(array $corpo) => chamar('modelo-chat.php', 'POST', $corpo);
 $textosPublicos = static function (): array { $_GET = ['modelo' => 'livia-voguel']; $r = chamar('chat.php')[1]; $_GET = []; return [array_map(static fn($m) => $m['texto'], $r['mensagens']), $r['apagadas']]; };
 
-$_SESSION = ['usuario_id' => $fa];
+$_SESSION = sessao_cliente($fa);
 [$s] = $moderar(['acao' => 'apagar', 'id' => $m2]);
 verificar('cliente não modera: 401', $s, 401);
 $_GET = [];
@@ -611,7 +634,7 @@ verificar('bloquear apaga as mensagens da pessoa', $textosPublicos()[0], ['oi'])
 verificar('lista de bloqueados não mostra e-mail', str_contains(json_encode($c), '@'), false);
 
 $sessaoModelo = $_SESSION;
-$_SESSION = ['usuario_id' => $bia];
+$_SESSION = sessao_cliente($bia);
 [$s, $c] = chamar('chat-enviar.php', 'POST', ['modelo' => 'livia-voguel', 'texto' => 'oi de novo']);
 verificar('bloqueada não escreve: 403', $s, 403);
 lv_lancar($bia, 100, 'compra', null, 'Pacote');
@@ -625,7 +648,7 @@ verificar('gorjeta de bloqueada aparece sem recado', [$ultima['tipo'], $ultima['
 $_SESSION = $sessaoModelo;
 [$s, $c] = $moderar(['acao' => 'desbloquear', 'usuario' => $bia]);
 verificar('desbloquear: 200 e sai da lista', [$s, $c['bloqueados']], [200, []]);
-$_SESSION = ['usuario_id' => $bia];
+$_SESSION = sessao_cliente($bia);
 [$s] = chamar('chat-enviar.php', 'POST', ['modelo' => 'livia-voguel', 'texto' => 'obrigada']);
 verificar('desbloqueada volta a escrever', $s, 200);
 
@@ -647,14 +670,15 @@ $receber = static fn(int $creditos) => lv_lancar($fa, -$creditos, 'gorjeta', nul
 $saque = static fn(array $corpo) => chamar('modelo-saque.php', 'POST', $corpo);
 $_GET = [];
 
-$_SESSION = ['usuario_id' => $fa];
+$_SESSION = sessao_cliente($fa);
 [$s] = chamar('modelo-saque.php');
 verificar('cliente não vê saques: 401', $s, 401);
 
 $_SESSION = [];
 $entrar('livia@exemplo.com.br', $senhaBoa);
 [$s, $c] = chamar('modelo-saque.php');
-verificar('sem ganhos: nada disponível, sem chave', [$s, $c['disponivel'], $c['pix'], $c['minimo_centavos']], [200, ['creditos' => 0, 'centavos' => 0], null, 5000]);
+$soValor = static fn(array $d): array => ['creditos' => $d['creditos'], 'centavos' => $d['centavos']];
+verificar('sem ganhos: nada disponível, sem chave', [$s, $soValor($c['disponivel']), $c['pix'], $c['minimo_centavos']], [200, ['creditos' => 0, 'centavos' => 0], null, 5000]);
 
 $chaves = [
     'cpf com pontuação' => ['cpf', '529.982.247-25', '52998224725'],
@@ -663,8 +687,8 @@ $chaves = [
     'aleatória' => ['aleatoria', '123E4567-E89B-12D3-A456-426614174000', '123e4567-e89b-12d3-a456-426614174000'],
 ];
 foreach ($chaves as $nome => [$tipo, $chave, $esperado]) {
-    [$s, $c] = $saque(['acao' => 'pix', 'tipo' => $tipo, 'chave' => $chave]);
-    verificar("chave Pix ($nome)", [$s, $c['pix']], [200, ['tipo' => $tipo, 'chave' => $esperado]]);
+    [$s, $c] = $saque(['acao' => 'pix', 'tipo' => $tipo, 'chave' => $chave, 'senha_atual' => $senhaBoa]);
+    verificar("chave Pix ($nome)", [$s, ['tipo' => $c['pix']['tipo'] ?? null, 'chave' => $c['pix']['chave'] ?? null]], [200, ['tipo' => $tipo, 'chave' => $esperado]]);
 }
 $ruins = ['cpf inválido' => ['cpf', '529.982.247-26'], 'e-mail inválido' => ['email', 'livia@'], 'fixo no lugar de celular' => ['celular', '(21) 3333-4444'],
     'aleatória curta' => ['aleatoria', '123e4567'], 'chave em lista' => ['cpf', ['52998224725']]];
@@ -676,6 +700,23 @@ foreach ($ruins as $nome => [$tipo, $chave]) {
 verificar('tipo de chave inválido: 422', [$s, $c['campo'] ?? null], [422, 'tipo']);
 verificar('chave recusada não troca a salva', lv_pix_da_modelo('livia-voguel')['tipo'], 'aleatoria');
 
+// Trocar a chave pede a senha (com uma sessão roubada não dá para desviar o saque).
+[$s, $c] = $saque(['acao' => 'pix', 'tipo' => 'cpf', 'chave' => '52998224725']);
+verificar('trocar a chave Pix sem a senha: 400', [$s, $c['campo'] ?? null], [400, 'senha_atual']);
+[$s, $c] = $saque(['acao' => 'pix', 'tipo' => 'cpf', 'chave' => '52998224725', 'senha_atual' => 'senha-errada-123']);
+verificar('trocar a chave Pix com a senha errada: 400', [$s, $c['campo'] ?? null], [400, 'senha_atual']);
+verificar('sem a senha certa, a chave não muda', lv_pix_da_modelo('livia-voguel')['tipo'], 'aleatoria');
+// Chave cadastrada ou trocada agora: o saque espera 24 h.
+$receber(300);
+[$s, $c] = $saque(['acao' => 'pedir']);
+verificar('chave nova: saque espera 24 h', [$s, $c['erro']], [409, 'Por segurança, o saque fica liberado 24 horas depois de cadastrar ou trocar a chave Pix.']);
+[, $c] = chamar('modelo-saque.php');
+verificar('o painel recebe quando o saque libera', is_string($c['pix']['saque_liberado_em'] ?? null), true);
+$pdo->exec("UPDATE lv_modelos_pix SET atualizado_em = '2000-01-01 00:00:00'");
+[, $c] = $saque(['acao' => 'pix', 'tipo' => 'aleatoria', 'chave' => '123e4567-e89b-12d3-a456-426614174000', 'senha_atual' => $senhaBoa]);
+verificar('salvar a mesma chave de novo não reinicia a espera', $c['pix']['saque_liberado_em'], null);
+$pdo->exec("DELETE FROM lv_extrato WHERE modelo = 'livia-voguel'");
+
 $receber(100); // 100 créditos × R$ 0,20 = R$ 20,00 (abaixo do mínimo de R$ 50,00)
 [$s, $c] = $saque(['acao' => 'pedir']);
 verificar('abaixo do mínimo: 409', [$s, $c['erro']], [409, 'O saque mínimo é de R$ 50,00.']);
@@ -683,7 +724,7 @@ $receber(200); // 300 créditos = R$ 60,00
 [$s, $c] = $saque(['acao' => 'pedir']);
 verificar('pedir saque: 200, sai tudo o que está disponível', [$s, $c['saques'][0]['creditos'], $c['saques'][0]['centavos'], $c['saques'][0]['status']], [200, 300, 6000, 'pendente']);
 verificar('pedido guarda a chave do momento', $c['saques'][0]['pix'], ['tipo' => 'aleatoria', 'chave' => '123e4567-e89b-12d3-a456-426614174000']);
-verificar('depois de pedir: nada disponível', $c['disponivel'], ['creditos' => 0, 'centavos' => 0]);
+verificar('depois de pedir: nada disponível', $soValor($c['disponivel']), ['creditos' => 0, 'centavos' => 0]);
 $receber(400); // R$ 80,00 novos
 [$s, $c] = $saque(['acao' => 'pedir']);
 verificar('um saque pendente por vez: 409', [$s, $c['erro']], [409, 'Você já tem um saque esperando pagamento.']);
@@ -697,10 +738,10 @@ $pdo->exec("UPDATE lv_saques SET status = 'recusado', observacao = 'Chave errada
 [, $c] = chamar('modelo-saque.php');
 verificar('recusado devolve os créditos ao disponível', [$c['saques'][0]['status'], $c['saques'][0]['observacao'], $c['disponivel']['creditos']], ['recusado', 'Chave errada', 400]);
 
-file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_SAQUE_MINIMO_CENTAVOS' => 10000];");
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0, 'MODELO_SAQUE_MINIMO_CENTAVOS' => 10000];");
 [$s, $c] = $saque(['acao' => 'pedir']);
 verificar('mínimo configurável no config.php', [$s, $c['erro']], [409, 'O saque mínimo é de R$ 100,00.']);
-file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0];");
 
 $pdo->exec("DELETE FROM lv_modelos_pix");
 [$s, $c] = $saque(['acao' => 'pedir']);
@@ -709,6 +750,21 @@ verificar('sem chave Pix não pede: 409', [$s, $c['erro']], [409, 'Cadastre sua 
 verificar('ação inválida: 422', $s, 422);
 [$s] = chamar('modelo-saque.php', 'POST', ['acao' => 'pedir'], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
 verificar('saque vindo de outro site: 403', $s, 403);
+
+// Espera antes do saque: cada gorjeta fica disponível MODELO_ESPERA_SAQUE_DIAS depois (padrão 7).
+$pdo->exec('DELETE FROM lv_saques');
+$pdo->exec("DELETE FROM lv_extrato WHERE modelo = 'livia-voguel'");
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
+$receber(300);
+$d = lv_saque_disponivel('livia-voguel');
+verificar('gorjeta de agora fica em espera (padrão 7 dias)', [$d['creditos'], $d['em_espera']['creditos'], $d['em_espera']['dias']], [0, 300, 7]);
+$pdo->exec("UPDATE lv_extrato SET criado_em = '2000-01-01 00:00:00' WHERE modelo = 'livia-voguel'");
+$d = lv_saque_disponivel('livia-voguel');
+verificar('passado o prazo, fica disponível', [$d['creditos'], $d['em_espera']['creditos']], [300, 0]);
+$pdo->exec("INSERT INTO lv_modelos_estornos (slug, pedido_id, creditos, criado_em) VALUES ('livia-voguel', 1, 120, '2026-10-11 00:00:00')");
+$d = lv_saque_disponivel('livia-voguel');
+verificar('estorno descontado da modelo sai do disponível', [$d['creditos'], $d['estornados']['creditos']], [180, 120]);
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0];");
 foreach (['ao-vivo.php', 'perfis.php', 'salas.php'] as $publico) {
     verificar("$publico não mostra chave Pix", str_contains(json_encode(chamar($publico)[1]), '123e4567'), false);
 }
@@ -717,7 +773,7 @@ foreach (['ao-vivo.php', 'perfis.php', 'salas.php'] as $publico) {
 recomecar();
 criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
 $uploads = sys_get_temp_dir() . '/lv-uploads-' . bin2hex(random_bytes(4));
-file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'UPLOADS_DIR' => " . var_export($uploads, true) . "];");
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0, 'UPLOADS_DIR' => " . var_export($uploads, true) . "];");
 $temporarios = [];
 register_shutdown_function(static function () use ($uploads, &$temporarios): void {
     foreach (array_merge(glob($uploads . '/modelos/*/*') ?: [], $temporarios) as $f) { @unlink($f); }
@@ -809,7 +865,7 @@ while (lv_fotos_contar('livia-voguel') < LV_FOTO_MAX_POR_MODELO) {
 }
 [$s, $c] = $enviarFoto($imagem(800, 600));
 verificar('limite de 12 fotos: 409', [$s, $c['erro']], [409, 'Você já tem 12 fotos. Apague uma para enviar outra.']);
-file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_ESPERA_SAQUE_DIAS' => 0];");
 
 // ============================================================================= painel da equipe
 recomecar();
@@ -857,6 +913,7 @@ $pdo->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALU
 $fa = (int) $pdo->lastInsertId();
 lv_lancar($fa, -500, 'gorjeta', null, 'Gorjeta', 'livia-voguel'); // R$ 100,00 para a modelo
 lv_pix_salvar('livia-voguel', 'cpf', '52998224725');
+$pdo->exec("UPDATE lv_modelos_pix SET atualizado_em = '2000-01-01 00:00:00'"); // chave antiga: sem a espera de 24 h
 [$saque] = lv_saque_pedir($idLivia, 'livia-voguel');
 $_SESSION = [];
 $entrarEquipe('equipe@exemplo.com.br', $senhaEquipe);
@@ -927,7 +984,7 @@ foreach ([['ana@exemplo.com.br', 'ana_rj'], ['bia@exemplo.com.br', 'bia_sp']] as
 $_SESSION = [];
 [$s] = chamar('conta-email.php', 'POST', ['email_novo' => 'x@exemplo.com.br', 'senha' => $senhaCli]);
 verificar('trocar e-mail sem login: 401', $s, 401);
-$_SESSION = ['usuario_id' => $ana];
+$_SESSION = sessao_cliente($ana);
 [$s, $c] = chamar('conta-email.php', 'POST', ['email_novo' => 'ana.nova@exemplo.com.br', 'senha' => 'errada']);
 verificar('trocar e-mail com senha errada: 401 no campo senha', [$s, $c['campo'] ?? null], [401, 'senha']);
 [$s, $c] = chamar('conta-email.php', 'POST', ['email_novo' => 'ana@', 'senha' => $senhaCli]);
@@ -944,7 +1001,7 @@ verificar('e-mail antigo não entra mais', $s, 401);
 [$s] = chamar('entrar.php', 'POST', ['email' => 'ana.nova@exemplo.com.br', 'senha' => $senhaCli]);
 verificar('e-mail novo entra', $s, 200);
 $pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro'");
-$_SESSION = ['usuario_id' => $ana];
+$_SESSION = sessao_cliente($ana);
 for ($i = 0; $i < LV_ERROS_LOGIN; $i++) { chamar('conta-email.php', 'POST', ['email_novo' => "z$i@exemplo.com.br", 'senha' => 'chute']); }
 [$s] = chamar('conta-email.php', 'POST', ['email_novo' => 'z@exemplo.com.br', 'senha' => $senhaCli]);
 verificar('chutes de senha ao trocar e-mail: espera', $s, 429);
@@ -961,7 +1018,7 @@ lv_registrar('login_erro', 'e:ana.nova@exemplo.com.br');
 $pdo->prepare("INSERT INTO lv_pedidos (codigo, usuario_id, pacote, creditos, valor_centavos, metodo, status, criado_em, atualizado_em) VALUES ('p1', ?, 0, 50, 1990, 'pix', 'pendente', ?, ?)")
     ->execute([$ana, lv_agora(), lv_agora()]);
 
-$_SESSION = ['usuario_id' => $ana];
+$_SESSION = sessao_cliente($ana);
 [$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'excluir']);
 verificar('excluir sem digitar EXCLUIR: 422', [$s, $c['campo'] ?? null], [422, 'confirmacao']);
 [$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => 'errada', 'confirmacao' => 'EXCLUIR']);
@@ -991,7 +1048,7 @@ verificar('mensagem dela some da sala; a gorjeta fica sem nome nem recado', [arr
 verificar('extrato e pedidos ficam (registro financeiro)', [(int) $pdo->query("SELECT COUNT(*) FROM lv_extrato WHERE usuario_id = $ana")->fetchColumn(), (int) $pdo->query("SELECT COUNT(*) FROM lv_pedidos WHERE usuario_id = $ana")->fetchColumn()], [2, 1]);
 verificar('ganhos da modelo continuam certos', lv_modelo_soma('livia-voguel')['creditos'], 20);
 verificar('bloqueio no chat dela some', (int) $pdo->query("SELECT COUNT(*) FROM lv_chat_bloqueios WHERE usuario_id = $ana")->fetchColumn(), 0);
-$_SESSION = ['usuario_id' => $bia];
+$_SESSION = sessao_cliente($bia);
 [, $c] = chamar('eu.php');
 verificar('a outra conta não é afetada', $c['usuario']['email'], 'bia@exemplo.com.br');
 [$s] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'EXCLUIR'], ['HTTP_ORIGIN' => 'https://site-estranho.com']);

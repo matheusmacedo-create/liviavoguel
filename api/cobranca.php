@@ -69,10 +69,12 @@ if ($metodo === 'cartao') {
     unset($numero, $cvv, $c, $b['cartao']);
 }
 
-// Preço: o do pacote. Só os e-mails de TESTE_EMAILS pagam PRECO_TESTE_CENTAVOS (compra de teste de R$ 1,00).
+// Preço: o do pacote. Só as contas de TESTE_USUARIOS (ids de lv_usuarios) pagam PRECO_TESTE_CENTAVOS (compra de
+// teste de R$ 1,00). Por id, e não por e-mail: o cadastro não confirma e-mail, então quem cadastrasse primeiro um
+// e-mail da lista ganharia o preço de teste.
 $valor = LV_PACOTES[$pacote]['centavos'];
 $teste = (int) lv_cfg('PRECO_TESTE_CENTAVOS', 0);
-if ($teste > 0 && in_array($usuario['email'], array_map('strtolower', (array) lv_cfg('TESTE_EMAILS', [])), true)) {
+if ($teste > 0 && in_array($usuarioId, array_map('intval', (array) lv_cfg('TESTE_USUARIOS', [])), true)) {
     $valor = $teste;
 }
 $creditos = LV_PACOTES[$pacote]['creditos'] + LV_PACOTES[$pacote]['bonus'];
@@ -95,7 +97,15 @@ if (lv_contar_eventos('cobranca', (string) $usuarioId, 3600) >= LV_COBRANCAS_POR
 }
 lv_registrar('cobranca', (string) $usuarioId, $metodo . ' · pacote ' . $pacote);
 
+// O pedido é gravado ANTES da cobrança: se a Unicopag aprovar e a resposta se perder no caminho (timeout, queda),
+// o pedido já existe, e o aviso dela acha o pedido pelo `metadata.pedido` (webhook.php) e credita.
 $codigo = bin2hex(random_bytes(16));
+$agora = lv_agora();
+lv_db()->prepare("INSERT INTO lv_pedidos (codigo, usuario_id, pacote, creditos, valor_centavos, metodo, status, ultimos4, criado_em, atualizado_em)
+    VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?, ?, ?)")
+    ->execute([$codigo, $usuarioId, $pacote, $creditos, $valor, $metodo, $metodo === 'cartao' ? $ultimos4 : null, $agora, $agora]);
+$pedidoId = (int) lv_db()->lastInsertId();
+
 $comprador = ['nome' => $nome, 'email' => $usuario['email'], 'telefone' => $telefone, 'cpf' => $cpf];
 $payload = lv_montar_cobranca($comprador, $pacote, $valor, $codigo, $metodo);
 if ($cartao !== null) {
@@ -105,7 +115,14 @@ try {
     $cobranca = lv_unicopag('POST', '/public/v1/payments', $payload);
 } catch (LvUnicopagErro $e) {
     lv_registrar('unicopag_recusou', (string) $usuarioId, $e->status . ' ' . $e->getMessage());
-    lv_falhar(in_array($e->status, [400, 402, 422], true) ? 422 : 502, $e->paraOComprador());
+    $recusada = in_array($e->status, [400, 402, 422], true);
+    if ($recusada) {
+        // A Unicopag respondeu que não aceitou: nada foi cobrado.
+        lv_aplicar_status($pedidoId, 'falhou');
+    }
+    // Sem resposta clara (fora do ar, timeout), o pedido fica pendente: se a cobrança tiver passado, o aviso
+    // da Unicopag credita; se não, ele vence sozinho em 25 h (lib/creditos.php).
+    lv_falhar($recusada ? 422 : 502, $e->paraOComprador());
 } finally {
     unset($payload, $cartao);
 }
@@ -120,21 +137,22 @@ if ($metodo === 'pix') {
 }
 $limitar = static fn(mixed $v, int $n): ?string => mb_substr((string) ($v ?? ''), 0, $n) ?: null;
 $agora = lv_agora();
-$linha = [
-    'codigo' => $codigo, 'usuario_id' => $usuarioId, 'pacote' => $pacote, 'creditos' => $creditos, 'valor_centavos' => $valor,
-    'metodo' => $metodo, 'status' => $status === 'pago' ? 'pendente' : $status,
-    'unicopag_hash' => $limitar($cobranca['hash'] ?? $cobranca['id'] ?? null, 64), 'unicopag_status' => $statusOrigem ?: null,
-    'pix_copia_cola' => $pix ? ($pix['pix_qr_code'] ?? null) : null,
-    'pix_imagem' => $pix ? ($pix['pix_base64'] ?? $pix['pix_url'] ?? null) : null,
-    'expira_em' => $expira,
-    'bandeira' => $metodo === 'cartao' ? $limitar($cobranca['card_brand'] ?? null, 30) : null,
-    'ultimos4' => $metodo === 'cartao' ? $ultimos4 : null,
-    'criado_em' => $agora, 'atualizado_em' => $agora, 'consultado_em' => $agora,
-];
-$colunas = implode(', ', array_keys($linha));
-$marcadores = implode(', ', array_fill(0, count($linha), '?'));
-lv_db()->prepare("INSERT INTO lv_pedidos ($colunas) VALUES ($marcadores)")->execute(array_values($linha));
-$pedido = lv_pedido_por('codigo', $codigo);
+// O aviso da Unicopag pode ter chegado antes desta resposta e já ter pago o pedido (webhook.php): o hash só entra
+// se ainda não houver, e o status só muda se ainda estiver pendente. Pago na hora passa por lv_aplicar_status abaixo.
+$novoStatus = $status === 'pago' ? 'pendente' : $status;
+lv_db()->prepare("UPDATE lv_pedidos SET unicopag_hash = COALESCE(unicopag_hash, ?), unicopag_status = ?,
+        status = CASE WHEN status = 'pendente' THEN ? ELSE status END,
+        pix_copia_cola = ?, pix_imagem = ?, expira_em = ?, bandeira = ?, atualizado_em = ?, consultado_em = ?
+    WHERE id = ?")
+    ->execute([
+        $limitar($cobranca['hash'] ?? $cobranca['id'] ?? null, 64), $statusOrigem ?: null, $novoStatus,
+        $pix ? ($pix['pix_qr_code'] ?? null) : null,
+        $pix ? ($pix['pix_base64'] ?? $pix['pix_url'] ?? null) : null,
+        $expira,
+        $metodo === 'cartao' ? $limitar($cobranca['card_brand'] ?? null, 30) : null,
+        $agora, $agora, $pedidoId,
+    ]);
+$pedido = lv_pedido_por('id', (string) $pedidoId);
 
 if ($status === 'pago') {
     // Cartão aprovado na hora: credita pela porta única (a mesma do webhook).

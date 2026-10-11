@@ -369,10 +369,16 @@
       if (!saques) return `<div class="painel"><h2>Saques</h2>${semGanhos}</div>`;
       const d = saques.disponivel;
       const pendente = saques.saques.some((x) => x.status === "pendente");
-      const podePedir = saques.pix && !pendente && d.centavos >= saques.minimo_centavos;
+      const liberaEm = saques.pix?.saque_liberado_em;
+      const podePedir = saques.pix && !liberaEm && !pendente && d.centavos >= saques.minimo_centavos;
       const motivo = !saques.pix ? "Cadastre a chave Pix abaixo para pedir saques."
+        : liberaEm ? `Por segurança, o saque fica liberado 24 horas depois de cadastrar ou trocar a chave Pix: ${horaBrasilia(liberaEm)}.`
         : pendente ? "Você já tem um saque esperando pagamento."
         : d.centavos < saques.minimo_centavos ? `O saque mínimo é de ${dinheiro(saques.minimo_centavos)}.` : "";
+      const espera = d.em_espera?.centavos > 0
+        ? `<p style="color:var(--texto-2);font-size:.85rem;margin-top:10px">Mais ${dinheiro(d.em_espera.centavos)} de ganhos recentes: cada gorjeta e minuto de privado fica disponível ${d.em_espera.dias} dias depois (prazo de contestação de pagamentos com cartão).</p>` : "";
+      const estornos = d.estornados?.centavos > 0
+        ? `<p style="color:var(--texto-2);font-size:.85rem;margin-top:10px">Já foram descontados ${dinheiro(d.estornados.centavos)} de pagamentos estornados pelos clientes.</p>` : "";
       return `
         <div class="painel">
           <div class="painel-topo"><h2>Saques</h2></div>
@@ -382,6 +388,7 @@
           </div>
           <button class="btn btn-primario" id="pedir-saque" ${podePedir ? "" : "disabled"}>Pedir saque de ${dinheiro(d.centavos)}</button>
           ${motivo ? `<p class="ajuda" style="color:var(--texto-2);font-size:.85rem;margin-top:10px">${esc(motivo)}</p>` : ""}
+          ${espera}${estornos}
           <p style="color:var(--texto-2);font-size:.85rem;margin-top:10px">O saque leva tudo o que está disponível. A equipe paga pelo Pix e o pedido aparece como pago aqui.</p>
         </div>
         <form class="painel" id="form-pix" novalidate>
@@ -392,6 +399,8 @@
             </select></div>
             <div class="campo"><label for="chave-pix">Chave Pix</label><input id="chave-pix" value="${esc(saques.pix?.chave ?? "")}" maxlength="80" autocomplete="off"></div>
           </div>
+          <div class="campo"><label for="senha-pix">Sua senha do painel</label><input id="senha-pix" type="password" autocomplete="current-password" maxlength="200"></div>
+          <p style="color:var(--texto-2);font-size:.85rem;margin:0 0 10px">Por segurança, salvar a chave pede a senha, e o saque fica liberado 24 horas depois de cadastrar ou trocar a chave.</p>
           <button class="btn" id="salvar-pix">Salvar chave</button>
         </form>
         <div class="painel">
@@ -413,13 +422,16 @@
       if (e.target.id !== "form-pix") return;
       e.preventDefault();
       marcarErro("chave-pix", "");
+      marcarErro("senha-pix", "");
       try {
-        saques = await LV.api("modelo-saque.php", { acao: "pix", tipo: document.getElementById("tipo-chave").value, chave: document.getElementById("chave-pix").value });
+        saques = await LV.api("modelo-saque.php", { acao: "pix", tipo: document.getElementById("tipo-chave").value,
+          chave: document.getElementById("chave-pix").value, senha_atual: document.getElementById("senha-pix").value });
         LV.toast("Chave Pix salva!");
         abrir();
       } catch (err) {
         if (err.status === 401) return location.replace("modelo-entrar.html");
         if (err.campo === "chave") marcarErro("chave-pix", err.message);
+        if (err.campo === "senha_atual") marcarErro("senha-pix", err.message);
         LV.toast(err.message);
       }
     });

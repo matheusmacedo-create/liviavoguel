@@ -138,10 +138,53 @@ function lv_sincronizar(array $pedido): array
     $origem = mb_substr((string) ($t['payment_status'] ?? ''), 0, 40);
     lv_db()->prepare('UPDATE lv_pedidos SET consultado_em = ?, unicopag_status = ? WHERE id = ?')->execute([lv_agora(), $origem, $id]);
     $novo = lv_traduzir_status($origem);
-    if ($novo === 'pago' && isset($t['amount']) && is_numeric($t['amount']) && (int) round((float) $t['amount']) !== (int) $pedido['valor_centavos']) {
-        lv_registrar('valor_divergente', (string) $id, 'amount ' . $t['amount'] . ' · pedido ' . $pedido['valor_centavos']);
-        error_log("[pagamentos] pedido $id: a Unicopag diz pago com valor diferente do pedido; créditos NÃO lançados");
+    // Só credita com o valor confirmado: sem `amount` na resposta, ou com valor diferente do pedido, não credita
+    // (fica pendente e registrado para a equipe olhar). O amount é em centavos, como o enviado na cobrança.
+    $amount = $t['amount'] ?? null;
+    if ($novo === 'pago' && (!is_numeric($amount) || (int) round((float) $amount) !== (int) $pedido['valor_centavos'])) {
+        lv_registrar('valor_divergente', (string) $id, 'amount ' . (is_scalar($amount) ? (string) $amount : 'ausente') . ' · pedido ' . $pedido['valor_centavos']);
+        error_log("[pagamentos] pedido $id: a Unicopag diz pago sem valor ou com valor diferente do pedido; créditos NÃO lançados");
         return lv_pedido_por('id', (string) $id) ?? $pedido;
     }
     return lv_aplicar_status($id, $novo);
+}
+
+/**
+ * Aviso de uma transação que nenhum pedido tem (a resposta da cobrança se perdeu antes de o site gravar o hash):
+ * consulta a transação na API e acha o pedido pelo `metadata.pedido` que a API devolve. Liga o hash ao pedido (só se
+ * o pedido ainda não tiver um) e sincroniza. Devolve o pedido, ou null se a transação não for de um pedido do site.
+ * LvUnicopagErro de consulta (fora do ar) sobe para o webhook pedir reenvio; transação inexistente (404) é null.
+ */
+function lv_pedido_pela_transacao(string $hash): ?array
+{
+    try {
+        $t = lv_unicopag('GET', '/public/v1/transactions/' . rawurlencode($hash));
+    } catch (LvUnicopagErro $e) {
+        if ($e->status === 404) {
+            return null;
+        }
+        throw $e;
+    }
+    $meta = $t['metadata'] ?? null;
+    if (is_string($meta)) {
+        $meta = json_decode($meta, true);
+    }
+    $codigo = is_array($meta) && is_string($meta['pedido'] ?? null) ? $meta['pedido'] : '';
+    if (!preg_match('/^[0-9a-f]{32}$/', $codigo)) {
+        return null;
+    }
+    $pedido = lv_pedido_por('codigo', $codigo);
+    if (!$pedido) {
+        return null;
+    }
+    if (empty($pedido['unicopag_hash'])) {
+        lv_db()->prepare('UPDATE lv_pedidos SET unicopag_hash = ?, atualizado_em = ? WHERE id = ? AND unicopag_hash IS NULL')
+            ->execute([mb_substr($hash, 0, 64), lv_agora(), (int) $pedido['id']]);
+        $pedido = lv_pedido_por('id', (string) $pedido['id']) ?? $pedido;
+    }
+    if ($pedido['unicopag_hash'] !== $hash) {
+        return null; // o pedido já está ligado a outra transação
+    }
+    lv_registrar('webhook_recuperado', (string) $pedido['id'], $hash);
+    return lv_sincronizar($pedido);
 }

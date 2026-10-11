@@ -25,5 +25,10 @@ window.SITE = {
   gorjetas: [5, 10, 25, 50, 100],
 
   // Mínimo de minutos de saldo para começar um show privado
-  privadoMinutosMinimos: 3
+  privadoMinutosMinimos: 3,
+
+  // Show privado com o servidor (modoDemo: false). Fica false até existir o fluxo em que a modelo recebe o pedido
+  // e aceita: sem ele, o cliente pagaria por minuto sem a modelo nem saber. O servidor também recusa cobrar
+  // (PRIVADO_ATIVO no api/config.php). No modo demonstração o botão aparece sempre.
+  privadoAtivo: false
 };

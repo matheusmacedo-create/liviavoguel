@@ -51,7 +51,9 @@ function lv_modelo_logada(): ?array
         return null;
     }
     $conta = lv_modelo_conta($id);
-    if (!$conta || !(int) $conta['ativa']) {
+    // Conta bloqueada, apagada ou com a senha trocada desde este login (lv_marca_senha): a sessão não vale mais.
+    if (!$conta || !(int) $conta['ativa']
+        || !hash_equals(lv_marca_senha((string) $conta['senha_hash']), (string) ($_SESSION['modelo_marca'] ?? ''))) {
         lv_modelo_deslogar();
         return null;
     }
@@ -63,7 +65,8 @@ function lv_exigir_modelo(): array
     return lv_modelo_logada() ?? lv_falhar(401, 'Entre na área da modelo para continuar.', ['login_modelo' => true]);
 }
 
-function lv_modelo_logar(int $id): void
+/** $senhaHash é o hash que ficou gravado (depois de um rehash ou de uma troca de senha, o novo). */
+function lv_modelo_logar(int $id, string $senhaHash): void
 {
     lv_sessao();
     if (!defined('LV_TESTE')) {
@@ -71,13 +74,14 @@ function lv_modelo_logar(int $id): void
     }
     $_SESSION['modelo_id'] = $id;
     $_SESSION['modelo_desde'] = time();
+    $_SESSION['modelo_marca'] = lv_marca_senha($senhaHash);
 }
 
 /** Sai só da área da modelo; se a mesma pessoa estiver logada como cliente, continua logada. */
 function lv_modelo_deslogar(): void
 {
     lv_sessao();
-    unset($_SESSION['modelo_id'], $_SESSION['modelo_desde']);
+    unset($_SESSION['modelo_id'], $_SESSION['modelo_desde'], $_SESSION['modelo_marca']);
     if (!defined('LV_TESTE') && session_status() === PHP_SESSION_ACTIVE) {
         session_regenerate_id(true);
     }

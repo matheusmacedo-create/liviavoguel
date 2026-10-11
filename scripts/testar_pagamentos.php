@@ -17,12 +17,21 @@ if (PHP_SAPI !== 'cli') {
 const LV_TESTE = true;
 $raiz = dirname(__DIR__);
 $configTeste = tempnam(sys_get_temp_dir(), 'lv-config-');
-file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'UNICO_API_KEY' => 'nao-usada-nos-testes',
-    'PRECO_TESTE_CENTAVOS' => 100, 'TESTE_EMAILS' => ['dono@exemplo.com.br']];");
+/** Configuração dos testes; $extra entra por cima (ex.: TESTE_USUARIOS, PRIVADO_ATIVO). Relida a cada chamada. */
+function configurar(array $extra = []): void
+{
+    global $configTeste;
+    $config = ['SITE_URL' => 'https://exemplo.com.br', 'UNICO_API_KEY' => 'nao-usada-nos-testes', 'PRECO_TESTE_CENTAVOS' => 100,
+        'MODELO_ESPERA_SAQUE_DIAS' => 0, 'PRIVADO_ATIVO' => true] + [];
+    file_put_contents($configTeste, '<?php return ' . var_export(array_replace($config, $extra), true) . ';');
+}
+configurar();
 putenv("LV_CONFIG_ARQUIVO=$configTeste");
 register_shutdown_function(static fn() => @unlink($configTeste));
 $_SERVER['REQUEST_METHOD'] = 'CLI';
 require $raiz . '/api/lib/base.php';
+require_once $raiz . '/api/lib/modelo-conta.php';
+require_once $raiz . '/api/lib/saques.php';
 
 $falhas = 0;
 $total = 0;
@@ -35,6 +44,13 @@ function verificar(string $nome, mixed $obtido, mixed $esperado): void
     }
     $falhas++;
     fwrite(STDERR, sprintf("FALHOU %s\n  esperado: %s\n  obtido:   %s\n", $nome, var_export($esperado, true), var_export($obtido, true)));
+}
+
+/** Sessão de cliente como o login (lv_logar) deixa: com a marca da senha atual. */
+function sessao_cliente(int $id): array
+{
+    $hash = (string) lv_db()->query('SELECT senha_hash FROM lv_usuarios WHERE id = ' . $id)->fetchColumn();
+    return ['usuario_id' => $id, 'usuario_marca' => lv_marca_senha($hash)];
 }
 
 // ----------------------------------------------------------------------------- banco de teste (SQLite)
@@ -55,7 +71,7 @@ function banco_novo(): PDO
 }
 
 // ----------------------------------------------------------------------------- Unicopag simulada
-$unico = ['transacoes' => [], 'chamadas' => [], 'proximo' => null, 'seq' => 0];
+$unico = ['transacoes' => [], 'chamadas' => [], 'proximo' => null, 'seq' => 0, 'perder_resposta' => false, 'consulta_fora' => false];
 $GLOBALS['LV_UNICOPAG_SIMULADA'] = static function (string $metodo, string $caminho, ?array $corpo) use (&$unico): array {
     $unico['chamadas'][] = [$metodo, $caminho, $corpo];
     if ($metodo === 'POST' && $caminho === '/public/v1/payments') {
@@ -69,14 +85,22 @@ $GLOBALS['LV_UNICOPAG_SIMULADA'] = static function (string $metodo, string $cami
         $hash = 'tx' . (++$unico['seq']);
         $pix = $corpo['payment_method'] === 'pix';
         $t = ['hash' => $hash, 'amount' => $corpo['amount'], 'payment_method' => $corpo['payment_method'],
-            'payment_status' => $resposta['payment_status'] ?? ($pix ? 'waiting_payment' : 'paid')];
+            'payment_status' => $resposta['payment_status'] ?? ($pix ? 'waiting_payment' : 'paid'), 'metadata' => $corpo['metadata']];
         if ($pix) {
             $t['pix'] = ['pix_qr_code' => '00020126PIXCOPIAECOLA' . $hash, 'pix_base64' => 'iVBORw0KGgoAAAANSUhEUg' . $hash];
         } else {
             $t['card_brand'] = 'visa';
         }
         $unico['transacoes'][$hash] = $t;
+        if ($unico['perder_resposta']) {
+            // A cobrança foi criada (e o cartão aprovado), mas a resposta não chegou ao site.
+            $unico['perder_resposta'] = false;
+            return [502, ['message' => 'Bad Gateway']];
+        }
         return [200, $t];
+    }
+    if ($metodo === 'GET' && $unico['consulta_fora']) {
+        return [500, ['message' => 'fora do ar']];
     }
     if ($metodo === 'GET' && preg_match('#^/public/v1/transactions/(\w+)$#', $caminho, $m)) {
         return isset($unico['transacoes'][$m[1]]) ? [200, $unico['transacoes'][$m[1]]] : [404, ['message' => 'Not found']];
@@ -235,6 +259,12 @@ $unico['transacoes'][$h]['amount'] = 1;
 pagar($h);
 chamar('webhook.php', 'POST', ['hash' => $h]);
 verificar('valor divergente não credita', [lv_pedido_por('unicopag_hash', $h)['status'], lv_saldo($ana)], ['pendente', 130]);
+unset($unico['transacoes'][$h]['amount']);
+chamar('webhook.php', 'POST', ['hash' => $h]);
+verificar('pago sem valor na resposta não credita', [lv_pedido_por('unicopag_hash', $h)['status'], lv_saldo($ana)], ['pendente', 130]);
+$unico['transacoes'][$h]['amount'] = '19.90';
+chamar('webhook.php', 'POST', ['hash' => $h]);
+verificar('valor em reais (não centavos) não credita', [lv_pedido_por('unicopag_hash', $h)['status'], lv_saldo($ana)], ['pendente', 130]);
 
 // O webhook se perdeu: a consulta da tela (status.php) credita mesmo assim.
 [$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 2, 'metodo' => 'pix'] + $comprador);
@@ -284,9 +314,33 @@ verificar('recusado não credita', lv_saldo($ana), $antes + 50);
 $unico['proximo'] = [422, ['message' => 'Dados inválidos', 'errors' => ['card.number' => ['Cartão não aceito.']]]];
 [$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 1, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
 verificar('erro de validação da Unicopag chega ao comprador', [$s, $r['erro'] ?? null], [422, 'Cartão não aceito.']);
+$ultimoPedido = static fn(): array => lv_db()->query('SELECT * FROM lv_pedidos ORDER BY id DESC LIMIT 1')->fetch();
+verificar('recusada pela Unicopag: o pedido fica como falhou', [$ultimoPedido()['status'], $ultimoPedido()['unicopag_hash']], ['falhou', null]);
 $unico['proximo'] = [500, ['message' => 'boom']];
 [$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 1, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
 verificar('Unicopag fora = 502 com mensagem genérica', [$s, $r['erro'] ?? null], [502, 'Não foi possível processar o pagamento. Tente novamente.']);
+verificar('sem resposta clara: o pedido fica pendente', $ultimoPedido()['status'], 'pendente');
+
+// A Unicopag aprova o cartão, mas a resposta se perde: o pedido já existe e o aviso dela credita.
+$antes = lv_saldo($ana);
+$unico['perder_resposta'] = true;
+[$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
+$perdido = $ultimoPedido();
+$hp = 'tx' . $unico['seq'];
+verificar('resposta perdida: 502, pedido pendente sem hash, nada creditado', [$s, $perdido['status'], $perdido['unicopag_hash'], lv_saldo($ana)], [502, 'pendente', null, $antes]);
+$unico['consulta_fora'] = true;
+[$s] = chamar('webhook.php', 'POST', ['hash' => $hp]);
+verificar('aviso desconhecido com a consulta fora do ar: 502 (a Unicopag reenvia)', $s, 502);
+$unico['consulta_fora'] = false;
+[$s, $r] = chamar('webhook.php', 'POST', ['hash' => $hp, 'payment_status' => 'paid']);
+verificar('aviso acha o pedido pelo metadata da API e credita', [$s, $r['status'] ?? null, lv_pedido_por('id', (string) $perdido['id'])['unicopag_hash'], lv_saldo($ana)],
+    [200, 'pago', $hp, $antes + 50]);
+chamar('webhook.php', 'POST', ['hash' => $hp]);
+verificar('aviso repetido não credita de novo', lv_saldo($ana), $antes + 50);
+// Transação de outro pedido (metadata de um pedido que já tem outro hash) não é religada.
+$unico['transacoes']['txfalso'] = ['hash' => 'txfalso', 'amount' => 1990, 'payment_status' => 'paid', 'metadata' => ['pedido' => $perdido['codigo']]];
+[$s, $r] = chamar('webhook.php', 'POST', ['hash' => 'txfalso']);
+verificar('transação que aponta para pedido já ligado: ignorada', [$s, $r['ignorado'] ?? null, lv_saldo($ana)], [200, 'transação desconhecida', $antes + 50]);
 
 // Contrato do checkout.html: validade "MM/AA", sem telefone, com um e-mail no corpo (ignorado).
 $aa = substr((string) ((int) gmdate('Y') + 3), 2);
@@ -310,6 +364,37 @@ pagar($hc, 'refunded');
 chamar('webhook.php', 'POST', ['hash' => $hc]);
 chamar('webhook.php', 'POST', ['hash' => $hc]);
 verificar('estorno tira os créditos uma vez', [lv_pedido_por('codigo', $cartaoId)['status'], lv_saldo($ana)], ['estornado', $antes - 50]);
+$estornosDe = static fn(int $pedidoId): array => lv_db()->query("SELECT slug, creditos FROM lv_modelos_estornos WHERE pedido_id = $pedidoId ORDER BY slug")->fetchAll(PDO::FETCH_NUM);
+verificar('estorno de créditos ainda não gastos não desconta das modelos', $estornosDe((int) lv_pedido_por('codigo', $cartaoId)['id']), []);
+
+// Estorno (chargeback) de uma compra já gasta em gorjetas: o que ficou sem dinheiro sai do saque das modelos.
+$sessaoAna = $_SESSION;
+$_SESSION = [];
+chamar('cadastro.php', 'POST', ['email' => 'golpe@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+$golpe = $_SESSION['usuario_id'];
+[, $r] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador); // +50
+$pedidoGolpe = lv_pedido_por('codigo', $r['id']);
+$dispAntes = lv_saque_disponivel('livia-voguel')['creditos'];
+lv_debitar($golpe, 30, 'gorjeta', 'Gorjeta para Livia', 'livia-voguel');
+lv_debitar($golpe, 15, 'gorjeta', 'Gorjeta para outra', 'outra-modelo'); // sobram 5
+verificar('gorjetas entram no disponível da modelo', lv_saque_disponivel('livia-voguel')['creditos'], $dispAntes + 30);
+pagar($pedidoGolpe['unicopag_hash'], 'chargeback');
+chamar('webhook.php', 'POST', ['hash' => $pedidoGolpe['unicopag_hash']]);
+chamar('webhook.php', 'POST', ['hash' => $pedidoGolpe['unicopag_hash']]);
+verificar('chargeback: comprador negativo', lv_saldo($golpe), -45);
+verificar('chargeback: os 45 sem dinheiro saem das modelos, do gasto mais recente', $estornosDe((int) $pedidoGolpe['id']), [['livia-voguel', 30], ['outra-modelo', 15]]);
+verificar('chargeback: o disponível da modelo volta ao de antes', lv_saque_disponivel('livia-voguel')['creditos'], $dispAntes);
+verificar('chargeback: aparece como estornado no saque', lv_saque_disponivel('livia-voguel')['estornados']['creditos'] >= 30, true);
+// Negativo, não gasta mais.
+verificar('saldo negativo não gasta', lv_debitar($golpe, 1, 'gorjeta', 'x', 'livia-voguel'), null);
+// Compra nova paga a dívida; se ela também for estornada, só o gasto feito depois dela é descontado.
+[, $r] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador); // -45 + 50 = 5
+$pedidoGolpe2 = lv_pedido_por('codigo', $r['id']);
+lv_debitar($golpe, 5, 'gorjeta', 'Gorjeta para Livia', 'livia-voguel');
+pagar($pedidoGolpe2['unicopag_hash'], 'refunded');
+chamar('webhook.php', 'POST', ['hash' => $pedidoGolpe2['unicopag_hash']]);
+verificar('segundo estorno: só os 5 gastos depois da compra, sem descontar de novo os 45', $estornosDe((int) $pedidoGolpe2['id']), [['livia-voguel', 5]]);
+$_SESSION = $sessaoAna;
 
 // ============================================================================= gastos (gorjeta / privado)
 $antes = lv_saldo($ana);
@@ -327,6 +412,13 @@ verificar('eu.php: data em ISO', (bool) preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:
 $antes = lv_saldo($ana);
 [$s, $r] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 10]);
 verificar('gorjeta pela API', [$s, $r['saldo'] ?? null], [200, $antes - 10]);
+[$s, $r] = chamar('gastar.php', 'POST', ['tipo' => 'privado', 'modelo' => 'livia-voguel', 'creditos' => 1]);
+verificar('privado com a modelo offline: 409, nada cobrado', [$s, lv_saldo($ana)], [409, $antes - 10]);
+lv_ao_vivo_definir('livia-voguel', true);
+configurar(['PRIVADO_ATIVO' => false]);
+[$s, $r] = chamar('gastar.php', 'POST', ['tipo' => 'privado', 'modelo' => 'livia-voguel', 'creditos' => 1]);
+verificar('privado sem PRIVADO_ATIVO: 409, nada cobrado', [$s, $r['erro'] ?? null, lv_saldo($ana)], [409, 'O show privado ainda não está disponível.', $antes - 10]);
+configurar();
 [$s, $r] = chamar('gastar.php', 'POST', ['tipo' => 'privado', 'modelo' => 'livia-voguel', 'creditos' => 1]);
 verificar('privado cobra o preço do servidor, não o do navegador', [$s, $r['creditos'] ?? null, $r['saldo'] ?? null], [200, 20, $antes - 30]);
 [$s] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => -50]);
@@ -377,15 +469,36 @@ $_SESSION = [];
 verificar('eu.php sem login = logado false', [$s, $r['logado'] ?? null], [200, false]);
 [$s] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 1]);
 verificar('gastar sem login = 401', $s, 401);
-$_SESSION = ['usuario_id' => (int) lv_db()->query("SELECT id FROM lv_usuarios WHERE email = 'bia@exemplo.com.br'")->fetchColumn()];
+$_SESSION = sessao_cliente((int) lv_db()->query("SELECT id FROM lv_usuarios WHERE email = 'bia@exemplo.com.br'")->fetchColumn());
 [$s] = chamar('status.php', 'GET', null, ['id' => "' OR 1=1 --"]);
 verificar('id malformado = 404', $s, 404);
 
 // ============================================================================= preço de teste (R$ 1,00)
 $_SESSION = [];
 chamar('cadastro.php', 'POST', ['email' => 'dono@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+$dono = $_SESSION['usuario_id'];
 chamar('cobranca.php', 'POST', ['pacote' => 3, 'metodo' => 'pix'] + $comprador);
-verificar('e-mail de teste paga R$ 1,00', end($unico['chamadas'])[2]['amount'], 100);
+verificar('fora de TESTE_USUARIOS: preço cheio', end($unico['chamadas'])[2]['amount'], LV_PACOTES[3]['centavos']);
+configurar(['TESTE_USUARIOS' => [$dono]]);
+chamar('cobranca.php', 'POST', ['pacote' => 2, 'metodo' => 'pix'] + $comprador);
+verificar('conta de TESTE_USUARIOS paga R$ 1,00', end($unico['chamadas'])[2]['amount'], 100);
+$_SESSION = sessao_cliente($ana);
+chamar('cobranca.php', 'POST', ['pacote' => 1, 'metodo' => 'pix'] + $comprador);
+verificar('outra conta continua no preço cheio', end($unico['chamadas'])[2]['amount'], LV_PACOTES[1]['centavos']);
+configurar();
+
+// ============================================================================= sessão presa à senha
+$_SESSION = [];
+chamar('entrar.php', 'POST', ['email' => 'dono@exemplo.com.br', 'senha' => 'segredo123']);
+$outroAparelho = $_SESSION; // a mesma conta aberta em outro lugar (ou um cookie roubado)
+[$s, $r] = chamar('conta.php', 'POST', ['senha_atual' => 'segredo123', 'senha_nova' => 'novasenha456']);
+verificar('troca de senha: esta sessão continua', [$s, $r['logado'] ?? null], [200, true]);
+$_SESSION = $outroAparelho;
+[$s, $r] = chamar('eu.php');
+verificar('troca de senha: a sessão aberta com a senha antiga cai', [$s, $r['logado'] ?? null], [200, false]);
+$_SESSION = ['usuario_id' => $dono];
+[$s, $r] = chamar('eu.php');
+verificar('sessão sem a marca da senha não vale', $r['logado'] ?? null, false);
 
 // ============================================================================= freios
 $_SESSION = [];
@@ -395,7 +508,7 @@ for ($i = 0; $i < 10; $i++) {
 [$s] = chamar('entrar.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'segredo123']);
 verificar('10 erros de login travam o e-mail', $s, 429);
 
-$_SESSION = ['usuario_id' => $ana];
+$_SESSION = sessao_cliente($ana);
 lv_db()->exec("DELETE FROM lv_eventos WHERE tipo = 'cobranca'");
 for ($i = 0; $i < 15; $i++) {
     lv_registrar('cobranca', (string) $ana);

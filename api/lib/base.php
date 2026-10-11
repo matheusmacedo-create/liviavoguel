@@ -328,11 +328,30 @@ function lv_sessao(): void
     session_start();
 }
 
+/**
+ * Marca da senha guardada na sessão no login. Trocar (ou redefinir) a senha muda a marca, e toda sessão aberta com a
+ * senha antiga deixa de valer: quem roubou um cookie perde o acesso assim que a dona da conta troca a senha.
+ */
+function lv_marca_senha(string $senhaHash): string
+{
+    return substr(hash('sha256', 'lv-sessao|' . $senhaHash), 0, 32);
+}
+
 function lv_usuario_id(): ?int
 {
     lv_sessao();
     $id = $_SESSION['usuario_id'] ?? null;
-    return is_int($id) && $id > 0 ? $id : null;
+    if (!is_int($id) || $id <= 0) {
+        return null;
+    }
+    $stmt = lv_db()->prepare('SELECT senha_hash FROM lv_usuarios WHERE id = ?');
+    $stmt->execute([$id]);
+    $hash = $stmt->fetchColumn();
+    if ($hash === false || !hash_equals(lv_marca_senha((string) $hash), (string) ($_SESSION['usuario_marca'] ?? ''))) {
+        unset($_SESSION['usuario_id'], $_SESSION['usuario_marca']);
+        return null;
+    }
+    return $id;
 }
 
 function lv_exigir_login(): int
@@ -340,13 +359,15 @@ function lv_exigir_login(): int
     return lv_usuario_id() ?? lv_falhar(401, 'Entre na sua conta para continuar.', ['login' => true]);
 }
 
-function lv_logar(int $usuarioId): void
+/** $senhaHash é o hash que ficou gravado (depois de um rehash, o novo). */
+function lv_logar(int $usuarioId, string $senhaHash): void
 {
     lv_sessao();
     if (!defined('LV_TESTE')) {
         session_regenerate_id(true);
     }
     $_SESSION['usuario_id'] = $usuarioId;
+    $_SESSION['usuario_marca'] = lv_marca_senha($senhaHash);
 }
 
 function lv_usuario(int $id): ?array

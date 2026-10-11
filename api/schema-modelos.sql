@@ -107,6 +107,19 @@ CREATE TABLE IF NOT EXISTS lv_saques (
   KEY ix_saques_modelo (slug, pedido_em)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Estornos (chargeback/reembolso) que caem sobre créditos já gastos com a modelo. Quando uma compra é estornada
+-- depois de o comprador ter gastado os créditos dela, o que ficou sem dinheiro por trás é descontado do que as
+-- modelos que receberam esses gastos podem sacar (os gastos mais recentes primeiro). Ver lib/creditos.php.
+CREATE TABLE IF NOT EXISTS lv_modelos_estornos (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  slug VARCHAR(40) NOT NULL,
+  pedido_id INT UNSIGNED NOT NULL,
+  creditos INT UNSIGNED NOT NULL,
+  criado_em DATETIME NOT NULL,
+  UNIQUE KEY uq_estornos_pedido_modelo (pedido_id, slug),
+  KEY ix_estornos_modelo (slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Fotos que a modelo envia pelo painel. O arquivo fica em uploads/modelos/<slug>/<arquivo> (fora do Git; o deploy
 -- não apaga). Uma por modelo é a capa; as outras formam a galeria, na ordem de `ordem`.
 CREATE TABLE IF NOT EXISTS lv_modelos_fotos (

@@ -76,7 +76,7 @@
           <strong>Gorjeta:</strong>
           ${S.gorjetas.map((v) => `<button data-gorjeta="${v}">● ${v}</button>`).join("")}
           <button data-gorjeta="">Outro valor</button>
-          <button class="btn btn-primario btn-pequeno privado" id="privado">🔒 Show privado · <span id="preco-privado">${m.precoPrivado}</span>/min</button>
+          ${S.modoDemo || S.privadoAtivo ? `<button class="btn btn-primario btn-pequeno privado" id="privado">🔒 Show privado · <span id="preco-privado">${m.precoPrivado}</span>/min</button>` : ""}
         </div>
 
         <div class="abas" id="abas">
@@ -335,10 +335,12 @@
     if (u && LV.ler("lv_seguir_" + m.slug) === "1") $("seguir").textContent = "♥ Seguindo";
     window.addEventListener("beforeunload", () => privado?.encerrar());
 
-    // A modelo ligou ou desligou a sala: atualiza o selo e o player (sem mexer num privado em andamento).
+    // A modelo ligou ou desligou a sala: atualiza o selo e o player. Se ela saiu do ar no meio de um privado,
+    // o privado acaba (e a cobrança por minuto para).
     document.addEventListener("lv:ao-vivo", () => {
       $("selo-ao-vivo").className = m.online ? "badge-online" : "badge-offline";
       $("selo-ao-vivo").textContent = m.online ? "Ao vivo" : "Offline";
+      if (privado && !m.online) privado.encerrar(`${m.nome} saiu do ar. O show privado foi encerrado.`);
       if (!privado) $("player").innerHTML = player();
     });
 
@@ -354,7 +356,7 @@
 
     // Configuração da sala salva pela modelo: preço do privado, meta, boas-vindas (e o filtro do chat, lido na hora).
     document.addEventListener("lv:sala", () => {
-      $("preco-privado").textContent = m.precoPrivado;
+      if ($("preco-privado")) $("preco-privado").textContent = m.precoPrivado;
       $("msg-boas-vindas").textContent = boasVindas();
       atualizarMeta();
       abrirAba(document.querySelector("#abas button.ativo")?.dataset.aba || "sobre");

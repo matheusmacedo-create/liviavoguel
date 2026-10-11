@@ -61,7 +61,9 @@ function lv_aplicar_status(int $id, string $novo): array
             if ($novo === 'pago') {
                 lv_lancar((int) $antes['usuario_id'], (int) $antes['creditos'], 'compra', $id, 'Pacote de ' . $antes['creditos'] . ' créditos');
             } elseif ($novo === 'estornado') {
+                $saldoAntes = lv_saldo((int) $antes['usuario_id']);
                 lv_lancar((int) $antes['usuario_id'], -(int) $antes['creditos'], 'estorno', $id, 'Estorno do pacote de ' . $antes['creditos'] . ' créditos');
+                lv_estornar_das_modelos($antes, $saldoAntes);
             }
         } elseif ($novo === 'estornado') {
             [$sql, $params] = $transicoes['estornado_pendente'];
@@ -77,6 +79,40 @@ function lv_aplicar_status(int $id, string $novo): array
         $pdo->prepare($sql)->execute($params);
     }
     return lv_pedido_por('id', (string) $id) ?? [];
+}
+
+/**
+ * Estorno de uma compra cujos créditos já foram gastos: o saldo do comprador fica negativo, e esse negativo (o que
+ * foi gasto sem dinheiro por trás) sai do que as modelos podem sacar, começando pelos gastos mais recentes desde a
+ * compra. Só conta o negativo que ESTE estorno criou: um segundo estorno não desconta de novo o do primeiro.
+ * Roda dentro da transação de lv_aplicar_status; a chave única (pedido_id, slug) segura repetição.
+ */
+function lv_estornar_das_modelos(array $pedido, int $saldoAntes): void
+{
+    $creditos = (int) $pedido['creditos'];
+    $semDinheiro = max(0, $creditos - $saldoAntes) - max(0, -$saldoAntes);
+    if ($semDinheiro <= 0) {
+        return;
+    }
+    // "Depois da compra" pela ordem do extrato (id), não pelo horário: dois lançamentos no mesmo segundo não se confundem.
+    $compra = lv_db()->prepare("SELECT id FROM lv_extrato WHERE pedido_id = ? AND motivo = 'compra'");
+    $compra->execute([(int) $pedido['id']]);
+    $stmt = lv_db()->prepare("SELECT modelo, -creditos AS creditos FROM lv_extrato
+        WHERE usuario_id = ? AND motivo IN ('gorjeta', 'privado') AND modelo IS NOT NULL AND id > ? ORDER BY id DESC");
+    $stmt->execute([(int) $pedido['usuario_id'], (int) $compra->fetchColumn()]);
+    $porModelo = [];
+    foreach ($stmt->fetchAll() as $gasto) {
+        if ($semDinheiro <= 0) {
+            break;
+        }
+        $parte = min($semDinheiro, (int) $gasto['creditos']);
+        $porModelo[$gasto['modelo']] = ($porModelo[$gasto['modelo']] ?? 0) + $parte;
+        $semDinheiro -= $parte;
+    }
+    $inserir = lv_db()->prepare('INSERT INTO lv_modelos_estornos (slug, pedido_id, creditos, criado_em) VALUES (?, ?, ?, ?)');
+    foreach ($porModelo as $slug => $parte) {
+        $inserir->execute([$slug, (int) $pedido['id'], $parte, lv_agora()]);
+    }
 }
 
 function lv_lancar(int $usuarioId, int $creditos, string $motivo, ?int $pedidoId, string $descricao, ?string $modelo = null): void

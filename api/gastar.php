@@ -34,6 +34,14 @@ if ($tipo === 'gorjeta') {
         lv_falhar(422, $modelo['nome'] . ' bloqueou uma das palavras desse recado.', ['campo' => 'recado']);
     }
 } else {
+    // O show privado ainda não tem o lado da modelo (pedido e aceite no painel): sem PRIVADO_ATIVO no config.php,
+    // nenhum minuto é cobrado. E nunca com a modelo fora do ar.
+    if (!lv_cfg('PRIVADO_ATIVO', false)) {
+        lv_falhar(409, 'O show privado ainda não está disponível.');
+    }
+    if (!(lv_ao_vivo_todas()[$slug]['online'] ?? false)) {
+        lv_falhar(409, $modelo['nome'] . ' está offline. O show privado foi encerrado.');
+    }
     $creditos = lv_preco_privado($slug);
     $descricao = 'Show privado com ' . $modelo['nome'] . ' (1 minuto)';
 }
