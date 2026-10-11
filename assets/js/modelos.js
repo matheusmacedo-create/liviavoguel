@@ -18,6 +18,7 @@
  *  idiomas     → idiomas falados
  *  agenda      → horários fixos de transmissão
  *  precoPrivado→ créditos por minuto no show privado
+ *  meta        → meta de gorjetas da sala (título + total de créditos)
  *  streamUrl   → URL do player (iframe) do serviço de streaming. Vazio = mostra "offline"
  *  redes       → links externos opcionais
  */
@@ -44,6 +45,7 @@ window.MODELOS = [
       { dia: "Sábado", hora: "22h às 02h" }
     ],
     precoPrivado: 20,
+    meta: { titulo: "Dança especial 💃", alvo: 500 },
     streamUrl: "",
     redes: { instagram: "", twitter: "" }
   }

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Criar conta</title>
+  <meta name="rating" content="adult">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="auth">
+    <div class="auth-arte">
+      <div>
+        <h2>Crie sua conta grátis e entre na sala</h2>
+        <ul>
+          <li>● Cadastro em menos de 1 minuto</li>
+          <li>● Seu apelido é o que aparece no chat, nunca seu nome</li>
+          <li>● Cobrança discreta na fatura</li>
+        </ul>
+      </div>
+    </div>
+    <div class="auth-form">
+      <form class="auth-card" id="form" novalidate>
+        <h1>Criar conta</h1>
+        <p>Só para maiores de 18 anos.</p>
+        <div class="campo">
+          <label for="apelido">Apelido (aparece no chat)</label>
+          <input id="apelido" required minlength="3" maxlength="20" autocomplete="nickname" placeholder="ex.: carioca_89">
+          <span class="ajuda">De 3 a 20 letras, números ou _</span>
+        </div>
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input id="email" type="email" required autocomplete="email" placeholder="voce@email.com">
+        </div>
+        <div class="campo">
+          <label for="senha">Senha</label>
+          <input id="senha" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">
+        </div>
+        <div class="campo">
+          <label for="nascimento">Data de nascimento</label>
+          <input id="nascimento" type="date" required>
+        </div>
+        <label class="check"><input type="checkbox" id="aceite" required>
+          <span>Tenho 18 anos ou mais e aceito os <a href="termos.html" target="_blank">Termos de uso</a> e a <a href="termos.html#privacidade" target="_blank">Política de privacidade</a>.</span></label>
+        <button class="btn btn-primario btn-bloco">Criar conta</button>
+        <div class="auth-rodape">Já tem conta? <a class="link" href="entrar.html">Entrar</a></div>
+      </form>
+    </div>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    LV.montar("");
+    const $ = (id) => document.getElementById(id);
+
+    function idade(dataISO) {
+      const n = new Date(dataISO + "T00:00:00"), h = new Date();
+      let a = h.getFullYear() - n.getFullYear();
+      if (h.getMonth() < n.getMonth() || (h.getMonth() === n.getMonth() && h.getDate() < n.getDate())) a--;
+      return a;
+    }
+
+    function marcar(id, msg) {
+      const campo = $(id).closest(".campo");
+      campo.classList.toggle("erro", !!msg);
+      campo.querySelector(".msg-erro")?.remove();
+      if (msg) campo.insertAdjacentHTML("beforeend", `<span class="msg-erro">${msg}</span>`);
+      return !msg;
+    }
+
+    $("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const apelido = $("apelido").value.trim();
+      const email = $("email").value.trim();
+      const nasc = $("nascimento").value;
+      const ok = [
+        marcar("apelido", /^\w{3,20}$/.test(apelido) ? "" : "Use de 3 a 20 letras, números ou _"),
+        marcar("email", /^\S+@\S+\.\S+$/.test(email) ? "" : "E-mail inválido"),
+        marcar("senha", $("senha").value.length >= 6 ? "" : "A senha precisa de 6 caracteres ou mais"),
+        marcar("nascimento", !nasc ? "Informe sua data de nascimento" : idade(nasc) < 18 ? "O site é só para maiores de 18 anos" : "")
+      ].every(Boolean);
+      if (!$("aceite").checked) { LV.toast("Você precisa aceitar os termos para continuar."); return; }
+      if (!ok) return;
+
+      if (window.SITE.modoDemo) {
+        LV.entrar({ apelido, email });
+        LV.toast("Conta criada!");
+        setTimeout(() => (location.href = "creditos.html"), 700);
+      }
+      // Fora do modo demonstração: POST api/cadastro.php (feito na integração).
+    });
+  </script>
+</body>
+</html>

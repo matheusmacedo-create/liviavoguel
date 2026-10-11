@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Minha conta</title>
+  <meta name="rating" content="adult">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="container conta">
+    <nav class="lateral" id="lateral">
+      <a href="#visao">Visão geral</a>
+      <a href="#extrato">Extrato de créditos</a>
+      <a href="#seguindo">Seguindo</a>
+      <a href="#dados">Meus dados</a>
+    </nav>
+    <section id="conteudo"></section>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    LV.montar("");
+    const { esc, reais, dataHora } = LV;
+    const conteudo = document.getElementById("conteudo");
+    const u = LV.usuario();
+
+    function tabelaExtrato(lista) {
+      if (!lista.length) return `<div class="vazio"><div class="icone">●</div>Nenhuma movimentação ainda.<br><a class="link" href="creditos.html">Comprar créditos</a></div>`;
+      return `<div class="tabela-rolagem"><table class="tabela">
+        <thead><tr><th>Data</th><th>Descrição</th><th style="text-align:right">Créditos</th></tr></thead>
+        <tbody>${lista.map((l) => `
+          <tr><td>${dataHora(l.data)}</td><td>${esc(l.descricao)}</td>
+          <td style="text-align:right" class="${l.valor > 0 ? "mais" : "menos"}">${l.valor > 0 ? "+" : ""}${l.valor}</td></tr>`).join("")}
+        </tbody></table></div>`;
+    }
+
+    const seguidas = () => window.MODELOS.filter((m) => LV.ler("lv_seguir_" + m.slug) === "1");
+
+    const secoes = {
+      visao: () => {
+        const ext = LV.extrato();
+        const gasto = ext.filter((l) => l.valor < 0).reduce((s, l) => s - l.valor, 0);
+        return `
+          <h1 style="margin-bottom:18px">Olá, ${esc(u.apelido)}</h1>
+          <div class="cards-numeros">
+            <div class="numero destaque"><small>Saldo</small><strong>● ${LV.saldo()}</strong></div>
+            <div class="numero"><small>Créditos usados</small><strong>${gasto}</strong></div>
+            <div class="numero"><small>Seguindo</small><strong>${seguidas().length}</strong></div>
+          </div>
+          <div class="painel">
+            <div class="painel-topo"><h2>Últimas movimentações</h2><a class="link" href="#extrato">Ver tudo</a></div>
+            ${tabelaExtrato(ext.slice(0, 5))}
+          </div>
+          <div class="painel" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+            <div><strong>Precisa de mais créditos?</strong><div style="color:var(--texto-2);font-size:.9rem">Pacotes com bônus de até 120 créditos.</div></div>
+            <a class="btn btn-primario" href="creditos.html">Comprar créditos</a>
+          </div>`;
+      },
+      extrato: () => `
+        <div class="painel">
+          <div class="painel-topo"><h2>Extrato de créditos</h2><span class="saldo">● ${LV.saldo()}</span></div>
+          ${tabelaExtrato(LV.extrato())}
+        </div>`,
+      seguindo: () => {
+        const lista = seguidas();
+        return `
+          <div class="painel">
+            <h2>Seguindo</h2>
+            ${lista.length
+              ? `<div class="grade">${lista.map(LV.cardModelo).join("")}</div>`
+              : `<div class="vazio"><div class="icone">♡</div>Você ainda não segue ninguém.<br>Toque em "Seguir" na sala para ser avisado quando ela entrar ao vivo.</div>`}
+          </div>`;
+      },
+      dados: () => `
+        <form class="painel" id="form-dados" novalidate>
+          <h2>Meus dados</h2>
+          <div class="linha">
+            <div class="campo"><label for="apelido">Apelido</label><input id="apelido" value="${esc(u.apelido)}" maxlength="20"></div>
+            <div class="campo"><label for="email">E-mail</label><input id="email" type="email" value="${esc(u.email)}"></div>
+          </div>
+          <label class="check"><input type="checkbox" id="avisos" ${LV.ler("lv_avisos", "1") === "1" ? "checked" : ""}>
+            <span>Quero receber e-mail quando uma modelo que eu sigo entrar ao vivo.</span></label>
+          <button class="btn btn-primario">Salvar</button>
+        </form>
+        <form class="painel" id="form-senha" novalidate>
+          <h2>Trocar senha</h2>
+          <div class="linha">
+            <div class="campo"><label for="senha-atual">Senha atual</label><input id="senha-atual" type="password" autocomplete="current-password"></div>
+            <div class="campo"><label for="senha-nova">Nova senha</label><input id="senha-nova" type="password" autocomplete="new-password" minlength="6"></div>
+          </div>
+          <button class="btn">Trocar senha</button>
+        </form>
+        <div class="painel">
+          <h2>Excluir conta</h2>
+          <p style="color:var(--texto-2);margin-bottom:14px">Apaga sua conta e seus dados. Créditos não usados são perdidos.</p>
+          <button class="btn perigo" id="excluir">Excluir minha conta</button>
+        </div>`
+    };
+
+    function abrir() {
+      const nome = location.hash.slice(1) in secoes ? location.hash.slice(1) : "visao";
+      document.querySelectorAll("#lateral a").forEach((a) => a.classList.toggle("ativo", a.hash === "#" + nome));
+      conteudo.innerHTML = secoes[nome]();
+      ligar();
+    }
+
+    function ligar() {
+      document.getElementById("form-dados")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const apelido = document.getElementById("apelido").value.trim();
+        const email = document.getElementById("email").value.trim();
+        if (!/^\w{3,20}$/.test(apelido)) return LV.toast("Apelido: de 3 a 20 letras, números ou _");
+        if (!/^\S+@\S+\.\S+$/.test(email)) return LV.toast("E-mail inválido.");
+        LV.entrar({ apelido, email });
+        LV.gravar("lv_avisos", document.getElementById("avisos").checked ? "1" : "0");
+        LV.toast("Dados salvos!");
+      });
+      document.getElementById("form-senha")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (document.getElementById("senha-nova").value.length < 6) return LV.toast("A nova senha precisa de 6 caracteres ou mais.");
+        e.target.reset();
+        LV.toast("Senha alterada!");
+      });
+      document.getElementById("excluir")?.addEventListener("click", () => {
+        const m = LV.modal(`
+          <div class="modal-icone" style="color:#ff7a90">!</div>
+          <h2>Excluir conta?</h2>
+          <p>Essa ação não pode ser desfeita. Seus ${LV.saldo()} créditos serão perdidos.</p>
+          <div class="acoes">
+            <button class="btn btn-bloco perigo" id="confirmar">Sim, excluir</button>
+            <button class="btn btn-bloco" data-fechar>Cancelar</button>
+          </div>`);
+        m.querySelector("#confirmar").addEventListener("click", () => {
+          ["lv_usuario", "lv_extrato"].forEach((k) => { try { localStorage.removeItem(k); } catch {} });
+          location.href = "index.html";
+        });
+      });
+    }
+
+    if (!u) location.replace("entrar.html?volta=conta.html");
+    else { window.addEventListener("hashchange", abrir); abrir(); }
+  </script>
+</body>
+</html>

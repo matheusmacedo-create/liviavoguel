@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recuperar senha</title>
+  <meta name="rating" content="adult">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="auth-form" style="min-height:calc(100vh - 160px)">
+    <form class="auth-card" id="form" novalidate>
+      <h1>Recuperar senha</h1>
+      <p>Informe o e-mail da sua conta. Vamos enviar um link para criar uma senha nova.</p>
+      <div class="campo">
+        <label for="email">E-mail</label>
+        <input id="email" type="email" required autocomplete="email" placeholder="voce@email.com">
+      </div>
+      <button class="btn btn-primario btn-bloco">Enviar link</button>
+      <div class="auth-rodape"><a class="link" href="entrar.html">Voltar para o login</a></div>
+    </form>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    LV.montar("");
+    document.getElementById("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      if (!/^\S+@\S+\.\S+$/.test(email)) { LV.toast("Informe um e-mail válido."); return; }
+      // Mesma resposta exista ou não a conta, para não revelar quem é cadastrado.
+      e.target.innerHTML = `
+        <div class="sucesso"><div class="ok">✉</div>
+          <h1>Confira seu e-mail</h1>
+          <p style="color:var(--texto-2);margin:10px 0 20px">Se houver uma conta com <strong>${LV.esc(email)}</strong>, você vai receber o link em alguns minutos. Veja também a caixa de spam.</p>
+          <a class="btn btn-bloco" href="entrar.html">Voltar para o login</a>
+        </div>`;
+    });
+  </script>
+</body>
+</html>

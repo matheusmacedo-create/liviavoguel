@@ -20,29 +20,36 @@
   <script src="assets/js/app.js"></script>
   <script>
     LV.montar("sala");
-    const { esc, toast, saldo } = LV;
+    const { esc, toast } = LV;
+    const S = window.SITE;
+    const $ = (id) => document.getElementById(id);
 
     const slug = new URLSearchParams(location.search).get("m");
     const m = window.MODELOS.find((x) => x.slug === slug) || window.MODELOS[0];
     document.title = `${m.nome} — Sala ao vivo`;
 
-    // Player: se houver streamUrl, embute o player do serviço de streaming.
-    let player;
-    if (m.online && m.streamUrl) {
-      player = `<iframe src="${esc(m.streamUrl)}" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
-    } else {
-      player = `
-        <div class="player-capa"><img src="${esc(m.foto)}" alt=""></div>
-        <div class="player-msg"><div>
-          ${m.online
-            ? `<h3>${esc(m.nome)} está ao vivo</h3><p>Entre na sua conta para assistir à transmissão.</p>
-               <button class="btn btn-primario" data-acao="entrar">Entrar para assistir</button>`
-            : `<h3>${esc(m.nome)} está offline</h3><p>Confira a agenda e volte no próximo horário.</p>
-               <button class="btn" data-aba="agenda">Ver agenda</button>`}
-        </div></div>`;
+    // Total da meta da sala. No modo demonstração conta só as suas gorjetas.
+    const chaveMeta = "lv_meta_" + m.slug;
+    const metaAtual = () => Number(LV.ler(chaveMeta, 0));
+
+    function player() {
+      if (m.online && m.streamUrl && LV.usuario()) {
+        return `<iframe src="${esc(m.streamUrl)}" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+      }
+      let msg;
+      if (!m.online) {
+        msg = `<h3>${esc(m.nome)} está offline</h3><p>Confira a agenda e volte no próximo horário.</p>
+               <button class="btn" data-aba="agenda">Ver agenda</button>`;
+      } else if (!LV.usuario()) {
+        msg = `<h3>${esc(m.nome)} está ao vivo</h3><p>Entre na sua conta para assistir à transmissão.</p>
+               <a class="btn btn-primario" href="entrar.html?volta=${encodeURIComponent("sala.html?m=" + m.slug)}">Entrar para assistir</a>`;
+      } else {
+        msg = `<h3>${esc(m.nome)} está ao vivo</h3><p>A transmissão aparece aqui assim que o player for conectado.</p>`;
+      }
+      return `<div class="player-capa"><img src="${esc(m.foto)}" alt=""></div><div class="player-msg"><div>${msg}</div></div>`;
     }
 
-    document.getElementById("sala").innerHTML = `
+    $("sala").innerHTML = `
       <section>
         <div class="sala-cabecalho">
           <img class="avatar" src="${esc(m.foto)}" alt="">
@@ -56,12 +63,19 @@
           </div>
         </div>
 
-        <div class="player">${player}</div>
+        <div class="player" id="player">${player()}</div>
+
+        ${m.meta ? `
+        <div class="meta-sala">
+          <div class="meta-topo"><strong>🎯 Meta: ${esc(m.meta.titulo)}</strong><span id="meta-txt"></span></div>
+          <div class="barra"><div id="meta-barra"></div></div>
+        </div>` : ""}
 
         <div class="barra-gorjeta">
           <strong>Gorjeta:</strong>
-          ${window.SITE.gorjetas.map((v) => `<button data-gorjeta="${v}">● ${v}</button>`).join("")}
-          <button class="btn btn-primario btn-pequeno privado" id="privado">🔒 Show privado · ${m.precoPrivado} créditos/min</button>
+          ${S.gorjetas.map((v) => `<button data-gorjeta="${v}">● ${v}</button>`).join("")}
+          <button data-gorjeta="">Outro valor</button>
+          <button class="btn btn-primario btn-pequeno privado" id="privado">🔒 Show privado · ${m.precoPrivado}/min</button>
         </div>
 
         <div class="abas" id="abas">
@@ -73,65 +87,188 @@
       </section>
 
       <aside class="chat">
-        <div class="chat-topo"><strong>Chat ao vivo</strong></div>
-        <div class="chat-msgs" id="msgs">
+        <div class="chat-topo"><strong>Chat ao vivo</strong><small style="color:var(--texto-2)" id="quem"></small></div>
+        <div class="chat-msgs" id="msgs" aria-live="polite">
           <div class="msg sistema">Bem-vindo(a) à sala de ${esc(m.nome)}! Seja respeitoso(a) 💜</div>
         </div>
         <form class="chat-form" id="chat-form">
-          <input id="chat-input" maxlength="200" placeholder="Diga oi..." autocomplete="off">
+          <input id="chat-input" maxlength="200" placeholder="${LV.usuario() ? "Diga oi..." : "Entre para conversar"}" autocomplete="off">
           <button class="btn btn-primario btn-pequeno">Enviar</button>
         </form>
       </aside>`;
 
-    // Abas
+    const u = LV.usuario();
+    if (u) $("quem").textContent = "você é " + u.apelido;
+
+    function atualizarMeta() {
+      if (!m.meta) return;
+      const atual = Math.min(metaAtual(), m.meta.alvo);
+      $("meta-txt").textContent = `${atual} / ${m.meta.alvo}`;
+      $("meta-barra").style.width = (atual / m.meta.alvo) * 100 + "%";
+    }
+    atualizarMeta();
+
+    // ---------- Abas ----------
     const abas = {
       sobre: () => `
         <p>${esc(m.bio)}</p>
         <h4>Interesses</h4>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${m.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
-        <h4>Idiomas</h4><p>${m.idiomas.map(esc).join(", ")}</p>`,
-      galeria: () => `<div class="galeria">${m.galeria.map((f) => `<img src="${esc(f)}" alt="" loading="lazy">`).join("")}</div>`,
-      agenda: () => `<ul class="lista-agenda">${m.agenda.map((a) => `<li><span>${esc(a.dia)}</span><strong>${esc(a.hora)}</strong></li>`).join("")}</ul>`
+        <h4>Idiomas</h4><p>${m.idiomas.map(esc).join(", ")}</p>
+        <h4>Show privado</h4><p>${m.precoPrivado} créditos por minuto.</p>`,
+      galeria: () => m.galeria.length
+        ? `<div class="galeria">${m.galeria.map((f) => `<img src="${esc(f)}" alt="" loading="lazy">`).join("")}</div>`
+        : `<div class="vazio">Nenhuma foto ainda.</div>`,
+      agenda: () => m.agenda.length
+        ? `<ul class="lista-agenda">${m.agenda.map((a) => `<li><span>${esc(a.dia)}</span><strong>${esc(a.hora)}</strong></li>`).join("")}</ul>`
+        : `<div class="vazio">Agenda ainda não divulgada.</div>`
     };
     const abrirAba = (nome) => {
       document.querySelectorAll("#abas button").forEach((b) => b.classList.toggle("ativo", b.dataset.aba === nome));
-      document.getElementById("aba").innerHTML = abas[nome]();
+      $("aba").innerHTML = abas[nome]();
     };
     abrirAba("sobre");
 
+    // ---------- Chat ----------
+    // Por enquanto local (só no seu navegador). Depois é ligado a um servidor em tempo real.
+    const msgs = $("msgs");
+    function postar(html, classe = "") {
+      msgs.insertAdjacentHTML("beforeend", `<div class="msg ${classe}">${html}</div>`);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    $("chat-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!LV.exigirLogin("Entre na sua conta para conversar no chat.")) return;
+      const input = $("chat-input");
+      const texto = input.value.trim();
+      if (!texto) return;
+      postar(`<b>${esc(LV.usuario().apelido)}:</b>${esc(texto)}`);
+      input.value = "";
+    });
+
+    // ---------- Gorjetas ----------
+    function darGorjeta(valor, recado) {
+      if (LV.saldo() < valor) return LV.semCreditos(valor);
+      LV.lancar(-valor, `Gorjeta para ${m.nome}`);
+      LV.gravar(chaveMeta, metaAtual() + valor);
+      atualizarMeta();
+      postar(`💸 <b>${esc(LV.usuario().apelido)}</b> mandou ${valor} créditos${recado ? `: “${esc(recado)}”` : "!"}`, "gorjeta");
+      toast(`Gorjeta de ${valor} créditos enviada!`);
+    }
+
+    function modalGorjeta(inicial) {
+      let valor = inicial || S.gorjetas[1];
+      const md = LV.modal(`
+        <h2>Mandar gorjeta</h2>
+        <p>Para ${esc(m.nome)} · seu saldo: <strong>● ${LV.saldo()}</strong></p>
+        <div class="valores-gorjeta">${S.gorjetas.map((v) => `<button data-v="${v}">● ${v}</button>`).join("")}</div>
+        <div class="campo"><label for="g-valor">Valor (créditos)</label><input id="g-valor" type="number" min="1" step="1" inputmode="numeric"></div>
+        <div class="campo"><label for="g-recado">Recado (opcional)</label><input id="g-recado" maxlength="80" placeholder="Aparece no chat"></div>
+        <div class="acoes"><button class="btn btn-primario btn-bloco" id="g-enviar">Enviar gorjeta</button></div>`, { largo: true });
+      const inp = md.querySelector("#g-valor");
+      const marcar = () => md.querySelectorAll("[data-v]").forEach((b) => b.classList.toggle("ativo", Number(b.dataset.v) === valor));
+      inp.value = valor; marcar();
+      md.querySelector(".valores-gorjeta").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-v]"); if (!b) return;
+        valor = Number(b.dataset.v); inp.value = valor; marcar();
+      });
+      inp.addEventListener("input", () => { valor = Math.floor(Number(inp.value)); marcar(); });
+      md.querySelector("#g-enviar").addEventListener("click", () => {
+        if (!(valor >= 1)) return toast("Informe um valor de pelo menos 1 crédito.");
+        md.fechar();
+        darGorjeta(valor, md.querySelector("#g-recado").value.trim());
+      });
+    }
+
+    // ---------- Show privado ----------
+    let privado = null;
+    function modalPrivado() {
+      const minimo = m.precoPrivado * S.privadoMinutosMinimos;
+      const saldo = LV.saldo();
+      const md = LV.modal(`
+        <div class="modal-icone">🔒</div>
+        <h2>Show privado com ${esc(m.nome)}</h2>
+        <p>Só vocês dois na sala. A cobrança é por minuto e você pode encerrar quando quiser.</p>
+        <div class="privado-info">
+          <div><span>Preço</span><strong>${m.precoPrivado} créditos/min</strong></div>
+          <div><span>Saldo mínimo para começar</span><strong>${minimo} créditos</strong></div>
+          <div><span>Seu saldo</span><strong>● ${saldo} (≈ ${Math.floor(saldo / m.precoPrivado)} min)</strong></div>
+        </div>
+        <div class="acoes">
+          ${saldo >= minimo
+            ? `<button class="btn btn-primario btn-bloco" id="p-pedir">Pedir show privado</button>`
+            : `<a class="btn btn-primario btn-bloco" href="creditos.html">Comprar créditos</a>`}
+          <button class="btn btn-bloco" data-fechar>Agora não</button>
+        </div>`);
+      md.querySelector("#p-pedir")?.addEventListener("click", () => { md.fechar(); iniciarPrivado(); });
+    }
+
+    function iniciarPrivado() {
+      // No modo demonstração o privado "aceita" na hora e cobra por minuto do saldo local.
+      // Com o backend, o pedido vai para a modelo aceitar e a cobrança é feita no servidor.
+      const inicio = Date.now();
+      let minutosCobrados = 0;
+      const faixa = document.createElement("div");
+      faixa.className = "faixa-privado";
+      faixa.innerHTML = `<span>🔒 Show privado · <span class="cronometro" id="p-tempo">00:00</span> · <span id="p-gasto">0</span> créditos</span>
+        <button class="btn btn-pequeno perigo" id="p-encerrar">Encerrar</button>`;
+      $("player").appendChild(faixa);
+      $("privado").disabled = true;
+      postar(`Você iniciou um show privado com ${esc(m.nome)}.`, "sistema");
+
+      const cobrar = () => {
+        if (LV.saldo() < m.precoPrivado) return encerrar("Seu saldo acabou. O show privado foi encerrado.");
+        LV.lancar(-m.precoPrivado, `Show privado com ${m.nome} (minuto ${minutosCobrados + 1})`);
+        minutosCobrados++;
+        $("p-gasto").textContent = minutosCobrados * m.precoPrivado;
+      };
+      cobrar(); // o primeiro minuto é cobrado no início
+      const relogio = setInterval(() => {
+        const s = Math.floor((Date.now() - inicio) / 1000);
+        $("p-tempo").textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+        if (s >= minutosCobrados * 60) cobrar();
+      }, 1000);
+
+      function encerrar(motivo) {
+        clearInterval(relogio);
+        faixa.remove();
+        $("privado").disabled = false;
+        privado = null;
+        postar(`Show privado encerrado · ${minutosCobrados} min · ${minutosCobrados * m.precoPrivado} créditos.`, "sistema");
+        if (motivo) toast(motivo);
+      }
+      $("p-encerrar").addEventListener("click", () => encerrar());
+      privado = { encerrar };
+    }
+
+    // ---------- Cliques ----------
     document.addEventListener("click", (e) => {
       const aba = e.target.closest("[data-aba]");
-      if (aba) { abrirAba(aba.dataset.aba); if (!aba.closest("#abas")) document.getElementById("abas").scrollIntoView({ behavior: "smooth" }); }
+      if (aba) { abrirAba(aba.dataset.aba); if (!aba.closest("#abas")) $("abas").scrollIntoView({ behavior: "smooth" }); }
 
-      const g = e.target.closest("[data-gorjeta]");
+      const g = e.target.closest(".barra-gorjeta [data-gorjeta]");
       if (g) {
-        if (saldo() < Number(g.dataset.gorjeta)) toast("Créditos insuficientes. Compre créditos para mandar gorjetas.");
+        if (!LV.exigirLogin("Entre na sua conta para mandar gorjetas.")) return;
+        if (!m.online) return toast(`${m.nome} está offline agora.`);
+        if (g.dataset.gorjeta) darGorjeta(Number(g.dataset.gorjeta));
+        else modalGorjeta();
       }
       if (e.target.closest("#privado")) {
-        if (!m.online) toast(`${m.nome} está offline agora.`);
-        else if (saldo() < m.precoPrivado) toast("Você precisa de créditos para chamar no privado.");
+        if (!LV.exigirLogin("Entre na sua conta para chamar no privado.")) return;
+        if (!m.online) return toast(`${m.nome} está offline agora.`);
+        modalPrivado();
       }
-      if (e.target.closest("#seguir")) {
+      const seguir = e.target.closest("#seguir");
+      if (seguir) {
+        if (!LV.exigirLogin("Entre na sua conta para seguir e ser avisado quando ela entrar ao vivo.")) return;
         const seguindo = LV.ler("lv_seguir_" + m.slug) === "1";
         LV.gravar("lv_seguir_" + m.slug, seguindo ? "0" : "1");
-        e.target.textContent = seguindo ? "♡ Seguir" : "♥ Seguindo";
+        seguir.textContent = seguindo ? "♡ Seguir" : "♥ Seguindo";
         toast(seguindo ? "Você deixou de seguir." : `Você agora segue ${m.nome}!`);
       }
     });
-    if (LV.ler("lv_seguir_" + m.slug) === "1") document.getElementById("seguir").textContent = "♥ Seguindo";
-
-    // Chat: por enquanto local (só no seu navegador).
-    // Na próxima etapa ele é ligado a um servidor em tempo real.
-    const msgs = document.getElementById("msgs");
-    document.getElementById("chat-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const input = document.getElementById("chat-input");
-      const texto = input.value.trim();
-      if (!texto) return;
-      msgs.insertAdjacentHTML("beforeend", `<div class="msg"><b>Você:</b>${esc(texto)}</div>`);
-      msgs.scrollTop = msgs.scrollHeight;
-      input.value = "";
-    });
+    if (u && LV.ler("lv_seguir_" + m.slug) === "1") $("seguir").textContent = "♥ Seguindo";
+    window.addEventListener("beforeunload", () => privado?.encerrar());
   </script>
 </body>
 </html>
