@@ -272,6 +272,7 @@ verificar('webhook do cartão já pago não credita de novo', lv_saldo($ana), $a
 $unico['proximo'] = [200, ['payment_status' => 'refused']];
 [$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 1, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
 verificar('cartão recusado = 402 falhou', [$s, $r['status'] ?? null, $r['ok'] ?? null], [402, 'falhou', false]);
+verificar('cartão recusado traz erro e mensagem', ($r['erro'] ?? null) !== null && ($r['mensagem'] ?? null) === ($r['erro'] ?? null), true);
 verificar('recusado não credita', lv_saldo($ana), $antes + 50);
 
 $unico['proximo'] = [422, ['message' => 'Dados inválidos', 'errors' => ['card.number' => ['Cartão não aceito.']]]];
@@ -280,6 +281,21 @@ verificar('erro de validação da Unicopag chega ao comprador', [$s, $r['erro'] 
 $unico['proximo'] = [500, ['message' => 'boom']];
 [$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 1, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
 verificar('Unicopag fora = 502 com mensagem genérica', [$s, $r['erro'] ?? null], [502, 'Não foi possível processar o pagamento. Tente novamente.']);
+
+// Contrato do checkout.html: validade "MM/AA", sem telefone, com um e-mail no corpo (ignorado).
+$aa = substr((string) ((int) gmdate('Y') + 3), 2);
+[$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'nome' => 'Fulano de Tal', 'cpf' => '52998224725',
+    'email' => 'outro@exemplo.com.br', 'cartao' => ['numero' => '4111111111111111', 'titular' => 'FULANO', 'validade' => "07/$aa", 'cvv' => '123']]);
+verificar('checkout.html: cartão com validade MM/AA', [$s, $r['status'] ?? null], [201, 'pago']);
+$ultimo = end($unico['chamadas'])[2];
+verificar('checkout.html: validade convertida', [$ultimo['card']['exp_month'], $ultimo['card']['exp_year']], ['07', "20$aa"]);
+verificar('checkout.html: sem telefone, sem phone_number', array_key_exists('phone_number', $ultimo['customer']), false);
+verificar('checkout.html: e-mail é o da conta', $ultimo['customer']['email'], 'ana@exemplo.com.br');
+[$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'nome' => 'Fulano de Tal', 'cpf' => '52998224725',
+    'cartao' => ['numero' => '4111111111111111', 'titular' => 'FULANO', 'validade' => '13/30', 'cvv' => '123']]);
+verificar('checkout.html: validade MM/AA inválida', [$s, $r['campo'] ?? null], [422, 'cartao_validade']);
+[$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'pix', 'telefone' => '123'] + $comprador);
+verificar('telefone informado e inválido = 422', [$s, $r['campo'] ?? null], [422, 'telefone']);
 
 // Estorno: tira os créditos da compra, uma vez só.
 $hc = lv_pedido_por('codigo', $cartaoId)['unicopag_hash'];

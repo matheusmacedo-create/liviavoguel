@@ -69,7 +69,7 @@ ele por `assets/js/pagamento.js`.
 | `POST api/cadastro.php` | `{ email, senha, maior18: true }` → cria a conta e já entra |
 | `POST api/entrar.php` / `POST api/sair.php` | Login e logout (sessão PHP) |
 | `GET api/saldo.php` | `{ saldo, email }` do usuário logado |
-| `POST api/cobranca.php` | `{ pacote, metodo: "pix"\|"cartao", nome, cpf, telefone, cartao? }` → cria a cobrança |
+| `POST api/cobranca.php` | `{ pacote, metodo: "pix"\|"cartao", nome, cpf, telefone?, cartao?: { numero, titular, validade "MM/AA", cvv } }` → cria a cobrança |
 | `GET api/status.php?id=…` | `{ status: "pendente"\|"pago"\|"falhou"\|"expirado"\|"estornado", creditos, saldo }` |
 | `POST api/webhook.php` | Aviso da Unicopag. Confere a cobrança na API antes de creditar e nunca credita duas vezes |
 

@@ -1,6 +1,7 @@
 <?php
 /**
- * POST { pacote: <índice em SITE.pacotes>, metodo: "pix"|"cartao", nome, cpf, telefone, cartao?: { numero, titular, mes, ano, cvv } }
+ * POST { pacote: <índice em SITE.pacotes>, metodo: "pix"|"cartao", nome, cpf, telefone?, cartao?: { numero, titular, validade "MM/AA" (ou mes + ano), cvv } }
+ * O e-mail da cobrança é sempre o da conta logada (um `email` no corpo é ignorado).
  * Cria a cobrança na Unicopag para o usuário logado. O preço sai de lib/pacotes.php; nada de valor vem do navegador.
  * Pix: { id, status, creditos, pix: { qrcode_base64, qrcode_url, copia_cola, expira_em } }.
  * Cartão: { id, status, creditos, cartao: { bandeira, ultimos4 } } (402 com `erro` quando o banco recusa).
@@ -31,8 +32,10 @@ $cpf = lv_digitos(lv_texto($b['cpf'] ?? '', 20));
 if (!lv_cpf_valido($cpf)) {
     lv_falhar(422, 'CPF inválido.', ['campo' => 'cpf']);
 }
-$telefone = lv_telefone(lv_texto($b['telefone'] ?? '', 25));
-if ($telefone === '') {
+// Telefone é opcional (o checkout atual não pede); se vier, tem que ser válido.
+$telefoneBruto = lv_texto($b['telefone'] ?? '', 25);
+$telefone = lv_telefone($telefoneBruto);
+if ($telefoneBruto !== '' && $telefone === '') {
     lv_falhar(422, 'Telefone inválido. Use DDD + número.', ['campo' => 'telefone']);
 }
 
@@ -41,6 +44,10 @@ if ($metodo === 'cartao') {
     $c = is_array($b['cartao'] ?? null) ? $b['cartao'] : [];
     $numero = lv_digitos(lv_texto($c['numero'] ?? '', 30));
     $titular = lv_texto($c['titular'] ?? '', 80);
+    // Validade em mes + ano, ou num campo só "MM/AA" (o checkout.html manda assim).
+    if (!isset($c['mes']) && preg_match('#^\s*(\d{1,2})\s*/\s*(\d{2}|\d{4})\s*$#', lv_texto($c['validade'] ?? '', 10), $v)) {
+        [$c['mes'], $c['ano']] = [$v[1], $v[2]];
+    }
     $mes = (int) lv_digitos(lv_texto($c['mes'] ?? '', 2));
     $ano = (int) lv_digitos(lv_texto($c['ano'] ?? '', 4));
     $ano = $ano > 0 && $ano < 100 ? 2000 + $ano : $ano;
@@ -134,6 +141,7 @@ if ($status === 'pago') {
     $pedido = lv_aplicar_status((int) $pedido['id'], 'pago');
 }
 if ($pedido['status'] === 'falhou') {
-    lv_json(array_replace(lv_pedido_publico($pedido), ['ok' => false, 'erro' => 'O pagamento não passou: o banco recusou a cobrança. Tente outro cartão ou pague com Pix.']), 402);
+    $recusa = 'O pagamento não passou: o banco recusou a cobrança. Tente outro cartão ou pague com Pix.';
+    lv_json(array_replace(lv_pedido_publico($pedido), ['ok' => false, 'erro' => $recusa, 'mensagem' => $recusa]), 402);
 }
 lv_json(lv_pedido_publico($pedido), 201);

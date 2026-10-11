@@ -103,10 +103,10 @@ function lv_montar_cobranca(array $comprador, int $pacote, int $valor, string $c
         'amount' => $valor,
         'payment_method' => $metodo === 'pix' ? 'pix' : 'credit_card',
         'installments' => 1,
-        'customer' => [
+        'customer' => array_filter([
             'name' => $comprador['nome'], 'email' => $comprador['email'],
             'phone_number' => $comprador['telefone'], 'document' => $comprador['cpf'],
-        ],
+        ], static fn(string $v): bool => $v !== ''),
         'cart' => [[
             'hash' => 'creditos-' . $pacote, 'title' => "Pacote de $total créditos",
             'price' => $valor, 'quantity' => 1, 'operation_type' => 1,
