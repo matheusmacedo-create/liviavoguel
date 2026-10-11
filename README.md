@@ -113,8 +113,11 @@ Regras importantes:
 
 ### Como subir na Hostinger
 
-1. **Banco:** no hPanel, abra **Bancos de dados → Gerenciamento** e crie um banco MySQL com um usuário. Anote o nome do
-   banco, o usuário e a senha. Abra o **phpMyAdmin** desse banco e use **Importar** para carregar o `api/schema.sql`.
+1. **Banco:** no hPanel, abra **Bancos de dados → Gerenciamento** e crie um banco MySQL com um usuário (o do site é
+   `u448697994_livia`). Anote o nome do banco, o usuário e a senha. **Não precisa importar nada:** na primeira
+   requisição que usa o banco, a `api/` cria sozinha as tabelas de `api/schema.sql` e `api/schema-modelos.sql`
+   (e guarda a versão em `lv_esquema`; quando um desses arquivos muda num deploy, ela cria o que faltar).
+   Coluna nova numa tabela que já existe ainda precisa de `ALTER TABLE` à mão no phpMyAdmin.
 2. **Arquivos:** o site está publicado em `https://liviavoguel.nativon.com.br`, numa pasta só dele
    (`public_html/liviavoguel` do `nativon.com.br`). A Hostinger clona o branch `main` direto do GitHub nessa pasta:
    em **Avançado → Git**, use **Implantar** para puxar as novidades do `main`. O `.htaccess` da raiz bloqueia
@@ -170,7 +173,7 @@ aprovado e recusado, estorno, gastos sem saldo, isolamento entre usuários e os 
 A modelo entra em `/modelo-entrar.html` e cai em `/painel-modelo.html`. O login é **separado** do login de
 cliente: uma conta de quem assiste nunca abre o painel. Não existe cadastro de modelo pelo site.
 
-**Uma vez só, no phpMyAdmin:** depois de importar `api/schema.sql`, importe também `api/schema-modelos.sql`.
+As tabelas de `api/schema-modelos.sql` são criadas sozinhas pela `api/`, junto com as de `api/schema.sql`.
 
 **Criar a conta de uma modelo** (no seu computador, com PHP instalado):
 
@@ -209,7 +212,7 @@ aparece só pelo apelido, nunca pelo e-mail. Saques ainda são combinados por fo
 sala leem o status em `api/ao-vivo.php` (a cada minuto). O campo `online` de `assets/js/modelos.js` só vale no modo
 demonstração. Com a sala ligada, o painel avisa o servidor a cada minuto; se a modelo fechar o painel sem desligar,
 o site a mostra offline sozinho em 5 minutos, para ninguém pagar por uma sala vazia. Sair do painel desliga a sala.
-A tabela fica em `api/schema-modelos.sql` (importar de novo é seguro: só cria o que falta).
+A tabela fica em `api/schema-modelos.sql` (a `api/` cria sozinha o que faltar).
 
 **Perfil:** em "Meu perfil", a modelo edita nome artístico, cidade, "Sobre mim", interesses (até 10) e idiomas
 (1 a 5). Salvo em `lv_modelos_perfil` (`api/modelo-perfil.php`), vale sobre `assets/js/modelos.js` na página inicial e

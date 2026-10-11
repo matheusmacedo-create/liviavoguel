@@ -403,6 +403,16 @@ for ($i = 0; $i < 15; $i++) {
 [$s] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
 verificar('15 cobranças por hora travam', $s, 429);
 
+// ============================================================================= tabelas criadas pela api/
+$comandos = lv_esquema_comandos();
+$creates = 0;
+foreach (LV_ESQUEMAS as $arquivo) {
+    $creates += preg_match_all('/CREATE TABLE IF NOT EXISTS/', (string) file_get_contents($raiz . '/api/' . $arquivo));
+}
+verificar('esquema: um comando por CREATE TABLE', count($comandos), $creates);
+verificar('esquema: só CREATE TABLE IF NOT EXISTS', array_values(array_filter($comandos, static fn(string $c): bool => !str_starts_with($c, 'CREATE TABLE IF NOT EXISTS'))), []);
+verificar('esquema: sem comentário sobrando', array_values(array_filter($comandos, static fn(string $c): bool => str_contains($c, '--'))), []);
+
 // ============================================================================= segredo
 $publicos = array_merge(glob($raiz . '/assets/js/*.js') ?: [], glob($raiz . '/*.html') ?: []);
 $vazou = array_filter($publicos, static fn(string $f): bool => (bool) preg_match('/api_token|UNICO_API_KEY/', (string) file_get_contents($f)));
