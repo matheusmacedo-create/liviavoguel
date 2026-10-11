@@ -1,3 +1,9 @@
 {
-  "chaturbateEventsUrl": "https://eventsapi.chaturbate.com/events/SEU_USUARIO/SEU_TOKEN/"
+  "chaturbateEventsUrl": "https://eventsapi.chaturbate.com/events/SEU_USUARIO/SEU_TOKEN/",
+  "transmissao": {
+    "cameraprive": { "servidor": "rtmp://SERVIDOR-DO-CAMERAPRIVE/app", "chave": "SUA_CHAVE" },
+    "stripchat": { "servidor": "rtmp://SERVIDOR-DO-STRIPCHAT/app", "chave": "SUA_CHAVE" },
+    "cam4": { "servidor": "rtmp://SERVIDOR-DO-CAM4/app", "chave": "SUA_CHAVE" },
+    "chaturbate": { "servidor": "rtmp://SERVIDOR-DO-CHATURBATE/app", "chave": "SUA_CHAVE" }
+  }
 }

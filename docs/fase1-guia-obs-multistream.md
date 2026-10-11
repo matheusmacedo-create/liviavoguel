@@ -151,7 +151,8 @@ chat "vou pro privado, já volto", e só então pare os outros.
 > Por que não basta trocar de cena? Porque o OBS manda **a mesma imagem para todos**.
 > Se você mudar para PRIVADO, o cliente do privado também vê a tela "volto já".
 > Por isso, nesta fase, o jeito certo é parar as outras saídas.
-> Na fase 3 o painel faz isso sozinho.
+> Com o Painel Multicam (fase 3, pasta `painel-multicam/`), o OBS transmite pelo painel e o privado vira
+> um clique em "🔒 Privado aqui". Aí o plugin deixa de ser usado.
 
 ---
 

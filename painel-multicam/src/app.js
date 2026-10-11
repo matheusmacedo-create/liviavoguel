@@ -5,6 +5,7 @@ import { criarMetricas } from './core/metricas.js';
 import { interpretar } from './core/leitura.js';
 import { criarSimulador } from './core/simulador.js';
 import { resumoParaCSV } from './core/csv.js';
+import { saidasDesejadas, motivoParado } from './core/transmissao.js';
 
 const parametros = new URLSearchParams(location.search);
 const modoDemo = parametros.has('demo');
@@ -208,6 +209,131 @@ function mostrarAlerta(a) {
   bip();
 }
 
+/* ---------- Transmissão: OBS → painel → sites ---------- */
+
+const tx = { estado: null, controle: null, info: null };
+const ICONES = { 'no-ar': '🟢', conectando: '🟡', erro: '🔴', parado: '⚪' };
+
+// No modo demonstração não existe OBS nem ffmpeg: simula só os estados, com a mesma regra do privado.
+function criarTransmissaoDemo(aoMudar) {
+  const destinos = sites.map((s) => s.id);
+  const ligados = new Set(destinos);
+  let obsAoVivo = false;
+  let privadoEm = null;
+  const publicar = () => {
+    const querer = saidasDesejadas({ destinos, ligados, obsAoVivo, privadoEm });
+    aoMudar({
+      configurado: true, obsAoVivo, privadoEm,
+      receptor: obsAoVivo ? { estado: 'ao-vivo', detalhe: 'Recebendo o OBS (simulado)' } : { estado: 'esperando', detalhe: 'Esperando o OBS' },
+      saidas: Object.fromEntries(destinos.map((id) => [id, querer.has(id)
+        ? { ligado: ligados.has(id), estado: 'no-ar', detalhe: 'No ar (simulado)' }
+        : { ligado: ligados.has(id), estado: 'parado', detalhe: motivoParado({ id, ligados, obsAoVivo, privadoEm }) }])),
+    });
+  };
+  setTimeout(() => { obsAoVivo = true; publicar(); }, 1500);
+  publicar();
+  return {
+    privado: (id) => { privadoEm = id; publicar(); },
+    ligar: (id, valor) => { if (valor) ligados.add(id); else ligados.delete(id); publicar(); },
+    ligarTodos: (valor) => { for (const id of destinos) { if (valor) ligados.add(id); else ligados.delete(id); } publicar(); },
+  };
+}
+
+function desenharTransmissao(e) {
+  tx.estado = e;
+  const obs = $('#tx-obs');
+  const saidas = $('#tx-saidas');
+  const acoes = $('#tx-acoes');
+  const faixa = $('#faixa-privado');
+  obs.title = '';
+
+  if (!e?.configurado || e.falha) {
+    obs.textContent = e?.falha ? '🔴 Transmissão com problema' : '📡 Transmissão pelo painel desligada';
+    saidas.replaceChildren(el('span', {
+      class: 'tx-aviso',
+      textContent: e?.falha ?? 'Para o painel repassar o OBS aos sites, coloque as chaves de transmissão em config/segredos.local.json (veja o README).',
+    }));
+    acoes.hidden = true;
+    faixa.hidden = true;
+    return;
+  }
+
+  acoes.hidden = false;
+  const r = e.receptor;
+  obs.textContent = r.estado === 'ao-vivo' ? '📡 OBS: recebendo' : r.estado === 'erro' ? '📡 OBS: erro' : '📡 OBS: esperando…';
+  obs.title = r.detalhe;
+  saidas.replaceChildren(...Object.entries(e.saidas).filter(([id]) => porId.has(id)).map(([id, s]) => {
+    const site = porId.get(id);
+    return el('div', { class: 'saida', cor: site.cor },
+      el('span', { class: 'saida-nome', textContent: site.nome }),
+      el('span', { class: `saida-estado ${s.estado}`, textContent: `${ICONES[s.estado] ?? ''} ${s.detalhe}`, title: s.detalhe }),
+      el('button', {
+        type: 'button', textContent: s.ligado ? 'Desligar' : 'Ligar',
+        title: s.ligado ? 'Parar de enviar para este site' : 'Voltar a enviar para este site',
+        onclick: () => tx.controle?.ligar(id, !s.ligado),
+      }),
+      e.privadoEm ? null : el('button', {
+        type: 'button', class: 'privado-aqui', textContent: '🔒 Privado aqui',
+        title: 'Pausa os outros sites e deixa só este no ar',
+        onclick: () => tx.controle?.privado(id),
+      }));
+  }));
+
+  faixa.hidden = !e.privadoEm;
+  if (e.privadoEm) {
+    const nome = porId.get(e.privadoEm)?.nome ?? e.privadoEm;
+    $('#faixa-privado-texto').textContent = `🔒 EM PRIVADO NO ${nome.toUpperCase()} · os outros sites estão pausados`;
+  }
+}
+
+// Aviso de privado lido no chat: oferece (ou faz, se configurado) a pausa dos outros sites.
+function sugerirPrivado(siteId) {
+  const e = tx.estado;
+  if (!e?.configurado || e.falha || e.privadoEm || !e.obsAoVivo || !(siteId in e.saidas)) return;
+  const site = porId.get(siteId);
+  if (config.transmissao?.privadoAutomatico) {
+    tx.controle?.privado(siteId);
+    mostrarAviso(`🔒 Privado no ${site.nome}: os outros sites foram pausados`, site.cor);
+  } else {
+    mostrarAviso(`🔒 Privado detectado no ${site.nome}. Clique aqui para pausar os outros sites`, site.cor, () => tx.controle?.privado(siteId));
+  }
+  bip();
+}
+
+async function iniciarTransmissao() {
+  if (modoDemo) {
+    tx.info = { servidor: 'rtmp://127.0.0.1:1935/live', chave: 'painel' };
+    tx.controle = criarTransmissaoDemo(desenharTransmissao);
+    return;
+  }
+  if (!ponte?.transmissao) {
+    desenharTransmissao(null);
+    return;
+  }
+  tx.controle = ponte.transmissao;
+  ponte.transmissao.aoMudar(desenharTransmissao);
+  tx.info = await ponte.transmissao.info();
+  desenharTransmissao(tx.info.estado);
+}
+
+$('#btn-ligar-todos').onclick = () => tx.controle?.ligarTodos(true);
+$('#btn-desligar-todos').onclick = () => tx.controle?.ligarTodos(false);
+$('#btn-encerrar-privado').onclick = () => tx.controle?.privado(null);
+$('#btn-dados-obs').onclick = () => {
+  $('#obs-servidor').textContent = tx.info?.servidor ?? 'rtmp://127.0.0.1:1935/live';
+  $('#obs-chave').textContent = tx.info?.chave ?? 'painel';
+  $('#dlg-obs').showModal();
+};
+for (const botao of document.querySelectorAll('.copiar')) {
+  botao.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById(botao.dataset.copiar).textContent);
+      botao.textContent = 'Copiado';
+      setTimeout(() => { botao.textContent = 'Copiar'; }, 1500);
+    } catch { /* sem área de transferência: dá para selecionar o texto */ }
+  };
+}
+
 /* ---------- Abas dos sites ---------- */
 
 const abas = new Map();
@@ -290,6 +416,7 @@ function receber(ev) {
   if (!r) return;
   if (r.tipo !== 'espectadores') adicionarAoFeed(r);
   if (r.alerta) mostrarAlerta(r.alerta);
+  if (r.tipo === 'privado') sugerirPrivado(r.site);
 }
 
 function nomeArquivo() {
@@ -326,6 +453,7 @@ montarAbas();
 abrirAba(abaAtiva);
 desenharRanking();
 setInterval(desenharRanking, 1000);
+iniciarTransmissao();
 
 if (modoDemo) {
   $('#selo-demo').hidden = false;
