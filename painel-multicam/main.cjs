@@ -1,9 +1,11 @@
-// Processo principal do Painel Multicam: abre a janela, prende cada aba de site no leitor de chat
-// e lê a API de eventos do Chaturbate (que não pode ser chamada direto da tela).
+// Processo principal do Painel Multicam: abre a janela, prende cada aba de site no leitor de chat,
+// lê a API de eventos do Chaturbate (que não pode ser chamada direto da tela) e cuida do repasse
+// da transmissão do OBS para os sites (repasse.js).
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const { existsSync } = require('node:fs');
 const { pathToFileURL } = require('node:url');
 
 const argConfig = process.argv.find((a) => a.startsWith('--config='));
@@ -45,6 +47,50 @@ ipcMain.handle('salvar-csv', async (e, nome, conteudo) => {
   if (canceled || !filePath) return null;
   await fs.writeFile(filePath, conteudo, 'utf8');
   return filePath;
+});
+
+/* ---------- Transmissão: OBS → painel → sites ---------- */
+
+let repasse = null;
+let infoOBS = { servidor: 'rtmp://127.0.0.1:1935/live', chave: 'painel' };
+let estadoTransmissao = { configurado: false };
+
+function publicarTransmissao(estado) {
+  estadoTransmissao = estado;
+  for (const win of BrowserWindow.getAllWindows()) enviar(win, 'transmissao', estado);
+}
+
+async function iniciarTransmissao() {
+  const { default: config } = await import(pathToFileURL(caminhoConfig).href);
+  const segredos = await lerSegredos();
+  const chaves = segredos.transmissao ?? {};
+  const destinos = {};
+  for (const site of config.sites) {
+    const d = chaves[site.id];
+    if (site.ativo === false || !d?.servidor || !d?.chave) continue;
+    destinos[site.id] = { url: `${String(d.servidor).replace(/\/+$/, '')}/${d.chave}`, chave: String(d.chave) };
+  }
+  const porta = config.transmissao?.porta ?? 1935;
+  infoOBS = { servidor: `rtmp://127.0.0.1:${porta}/live`, chave: 'painel' };
+  if (!Object.keys(destinos).length) return;
+
+  const ffmpeg = require('ffmpeg-static');
+  if (!ffmpeg || !existsSync(ffmpeg)) {
+    publicarTransmissao({ configurado: true, falha: 'O ffmpeg não foi instalado. Rode "npm install" de novo nesta pasta.' });
+    return;
+  }
+  const { criarRepasse } = await import(pathToFileURL(path.join(__dirname, 'repasse.js')).href);
+  repasse = criarRepasse({ ffmpeg, porta, destinos, aoMudar: (e) => publicarTransmissao({ configurado: true, ...e }) });
+  repasse.iniciar();
+}
+
+ipcMain.handle('transmissao-info', () => ({ ...infoOBS, estado: estadoTransmissao }));
+
+ipcMain.handle('transmissao-comando', (_e, acao, site, valor) => {
+  if (!repasse) return;
+  if (acao === 'privado') repasse.privado(typeof site === 'string' ? site : null);
+  else if (acao === 'ligar' && typeof site === 'string') repasse.ligar(site, Boolean(valor));
+  else if (acao === 'todos') repasse.ligarTodos(Boolean(valor));
 });
 
 function enviar(win, canal, dados) {
@@ -134,5 +180,15 @@ async function criarJanela() {
   await win.loadFile(path.join(__dirname, 'src', 'index.html'), { query });
 }
 
-app.whenReady().then(criarJanela);
+app.whenReady().then(async () => {
+  if (!modoDemo) {
+    try {
+      await iniciarTransmissao();
+    } catch (err) {
+      publicarTransmissao({ configurado: true, falha: `Não consegui iniciar a transmissão: ${err.message}` });
+    }
+  }
+  await criarJanela();
+});
 app.on('window-all-closed', () => app.quit());
+app.on('will-quit', () => repasse?.parar()); // não deixa ffmpeg rodando depois de fechar

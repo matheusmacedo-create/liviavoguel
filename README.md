@@ -64,8 +64,9 @@ Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou 
 ## Transmitir em vários sites ao mesmo tempo
 
 - **Fase 1:** `docs/fase1-guia-obs-multistream.md`, o guia do OBS para transmitir em vários sites de cam juntos.
-- **Fase 2:** `painel-multicam/`, programa de computador com o chat de todos os sites numa tela só e o ranking de
-  R$/min. Não faz parte do site: o `.htaccess` bloqueia essa pasta no servidor. Veja `painel-multicam/README.md`.
+- **Fases 2 e 3:** `painel-multicam/`, programa de computador com o chat de todos os sites numa tela só, o ranking de
+  R$/min e a transmissão pelo painel, com o show privado num clique. Não faz parte do site: o `.htaccess` bloqueia
+  essa pasta no servidor. Veja `painel-multicam/README.md`.
 
 ## Cuidados legais
 

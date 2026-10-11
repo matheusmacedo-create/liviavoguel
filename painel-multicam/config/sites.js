@@ -12,6 +12,12 @@ export default {
   // minGorjetas gorjetas OU minValorBRL reais. Depois espera intervaloMin para avisar de novo.
   alertas: { janelaMin: 2, minGorjetas: 3, minValorBRL: 20, intervaloMin: 3 },
 
+  // Transmissão pelo painel (fase 3): o OBS manda para rtmp://127.0.0.1:<porta>/live e o painel repassa.
+  // As chaves de transmissão de cada site ficam em config/segredos.local.json.
+  // privadoAutomatico: true faz o painel pausar os outros sites sozinho quando lê um aviso de privado
+  // no chat. Com false (padrão), ele só avisa e você clica.
+  transmissao: { porta: 1935, privadoAutomatico: false },
+
   sites: [
     {
       id: 'cameraprive',

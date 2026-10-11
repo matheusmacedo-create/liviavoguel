@@ -19,6 +19,23 @@
     </div>
   </header>
 
+  <section id="transmissao" class="transmissao" aria-label="Transmissão">
+    <div class="tx-obs">
+      <span id="tx-obs" class="tx-status"></span>
+      <button id="btn-dados-obs" type="button" class="secundario">Configurar o OBS</button>
+    </div>
+    <div id="tx-saidas" class="tx-saidas"></div>
+    <div id="tx-acoes" class="tx-acoes">
+      <button id="btn-ligar-todos" type="button" class="secundario">Ligar todos</button>
+      <button id="btn-desligar-todos" type="button" class="secundario">Desligar todos</button>
+    </div>
+  </section>
+
+  <section id="faixa-privado" class="faixa-privado" hidden>
+    <strong id="faixa-privado-texto"></strong>
+    <button id="btn-encerrar-privado" type="button">Encerrar privado e voltar para todos</button>
+  </section>
+
   <section id="ranking" class="ranking" aria-label="Ranking dos sites"></section>
 
   <main class="corpo">
@@ -42,6 +59,19 @@
   </main>
 
   <div id="alertas" class="alertas" aria-live="polite"></div>
+
+  <dialog id="dlg-obs" class="dlg">
+    <h2>Configurar o OBS para transmitir pelo painel</h2>
+    <ol>
+      <li>No OBS, abra <b>Configurações → Transmissão</b> e escolha o serviço <b>Personalizado</b>.</li>
+      <li>Servidor: <code id="obs-servidor"></code> <button type="button" class="copiar" data-copiar="obs-servidor">Copiar</button></li>
+      <li>Chave de transmissão: <code id="obs-chave"></code> <button type="button" class="copiar" data-copiar="obs-chave">Copiar</button></li>
+      <li><b>Pare as saídas do plugin Multiple output</b> (da fase 1). Com os dois ligados, cada site recebe o vídeo duas vezes.</li>
+      <li>Clique em <b>Iniciar transmissão</b> no OBS. O painel repassa para todos os sites ligados.</li>
+    </ol>
+    <p class="dlg-nota">As chaves de cada site ficam em <code>config/segredos.local.json</code> (veja o README).</p>
+    <form method="dialog"><button>Fechar</button></form>
+  </dialog>
 
   <script type="module" src="app.js"></script>
 </body>

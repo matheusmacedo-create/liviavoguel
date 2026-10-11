@@ -1,6 +1,9 @@
-# Painel Multicam (fase 2)
+# Painel Multicam (fases 2 e 3)
 
 Programa de computador que junta numa tela só:
+
+- **Transmissão pelo painel (fase 3):** o OBS manda **um** sinal para o painel, e o painel repassa para todos
+  os sites. No show privado, um clique em **🔒 Privado aqui** pausa os outros sites e deixa só aquele no ar.
 
 - **Ranking dos sites:** quanto cada um está rendendo agora em **R$ por minuto** (últimos 5 minutos),
   quanto rendeu na sessão, pessoas assistindo e privados. O site que mais rende fica em primeiro com 🔥.
@@ -11,7 +14,8 @@ Programa de computador que junta numa tela só:
 - **Abas com cada site**, já logado. Clique numa mensagem ou num card e a aba daquele site abre pra responder.
 - **Exportar sessão (CSV):** gera a planilha da fase 1 pronta, com uma linha por site.
 
-O painel **só lê**. Para responder, a modelo escreve na aba do próprio site. Ele não clica nem escreve nada sozinho.
+No chat, o painel **só lê**. Para responder, a modelo escreve na aba do próprio site. Ele não clica nem escreve
+nada nos sites sozinho.
 
 ## Instalar (uma vez)
 
@@ -96,17 +100,64 @@ copie `config/segredos.exemplo.json` para `config/segredos.local.json` e cole o 
 > Esse link funciona como uma senha. O `segredos.local.json` não vai para o GitHub (está no `.gitignore`).
 > Nunca mande esse arquivo para ninguém.
 
+## Transmitir pelo painel e o show privado automático (fase 3)
+
+Na fase 1, o plugin *Multiple output* do OBS mandava o vídeo direto para cada site. Esse plugin não deixa
+outro programa ligar ou desligar cada site, então não dava para automatizar o privado. Na fase 3 o caminho muda:
+
+```
+OBS  ──►  painel (no próprio computador)  ──►  CameraPrivê
+                                          ──►  Stripchat
+                                          ──►  Cam4
+                                          ──►  Chaturbate
+```
+
+O vídeo não é recodificado, então o painel quase não usa processador. O upload continua o mesmo da fase 1:
+o vídeo sai uma vez para cada site.
+
+### Configurar (uma vez)
+
+1. Copie `config/segredos.exemplo.json` para `config/segredos.local.json` (se ainda não fez) e preencha,
+   em `transmissao`, o **servidor** e a **chave** de cada site. São os mesmos dados que você colocou no
+   plugin na fase 1. Site sem chave fica fora do repasse.
+2. Abra o painel (`npm start`) e clique em **Configurar o OBS**. Ele mostra o que colocar no OBS:
+   em **Configurações → Transmissão**, serviço **Personalizado**, servidor `rtmp://127.0.0.1:1935/live` e chave `painel`.
+3. **Pare as saídas do plugin Multiple output.** Se os dois estiverem ligados, cada site recebe o vídeo duas vezes.
+
+### Usar
+
+1. Abra o painel **antes** de começar a live.
+2. No OBS, clique em **Iniciar transmissão**. Na barra de transmissão do painel aparece "📡 OBS: recebendo" e
+   cada site passa de 🟡 "Conectando" para 🟢 "No ar".
+3. **Show privado:** clique em **🔒 Privado aqui** no site do privado. Os outros sites são pausados na hora e
+   aparece uma faixa rosa "EM PRIVADO NO ...". Acabou o privado: **Encerrar privado e voltar para todos**.
+4. Para tirar um site da live sem parar os outros: **Desligar** na barra. **Ligar** de novo para voltar.
+
+Quando o painel lê no chat um aviso de privado do site, ele mostra um alerta e você clica para pausar os
+outros. Para o painel pausar sozinho, mude `privadoAutomatico` para `true` em `config/sites.js`. O privado
+sempre termina no botão, porque o fim do privado nem sempre aparece no chat.
+
+Detalhes:
+- Se um site cair, o painel tenta de novo sozinho (espera um pouco mais a cada tentativa) e mostra o erro em 🔴.
+  As mensagens de erro nunca mostram a chave do site.
+- Se a internet não der conta de algum site, o painel reconecta só aquele site.
+- O painel só aceita o vídeo do próprio computador. Ninguém da rede consegue mandar vídeo para ele.
+- Fechar o painel encerra o repasse: os sites saem do ar mesmo que o OBS continue transmitindo.
+
 ## Limitações desta versão
 
 - Os seletores dos sites (menos o Chaturbate) ainda **precisam ser preenchidos**, como explicado acima.
   Não dava para descobrir sem entrar numa conta de modelo.
 - O painel não responde mensagens: clique na mensagem e responda na aba do site.
 - Os números ficam só enquanto o programa está aberto. **Exporte o CSV no fim de cada live.**
-- O show privado ainda é na mão, como no guia da fase 1. A troca automática é a fase 3.
+- O repasse foi testado com um OBS e sites simulados (ffmpeg), não com os sites de verdade. Na primeira live,
+  confira a sala pública de cada site pelo celular, como no guia da fase 1.
 
 ## Para quem for mexer no código
 
-- `main.cjs`: janela, abas isoladas e leitura da API do Chaturbate.
+- `main.cjs`: janela, abas isoladas, leitura da API do Chaturbate e o repasse da transmissão.
+- `repasse.js`: recebe o OBS (ffmpeg) e mantém um envio por site. `src/core/flv.js` copia o vídeo para cada
+  site e faz o site que entra no meio começar num quadro-chave. `src/core/transmissao.js`: a regra do privado.
 - `preload-site.cjs`: roda dentro de cada site e lê o chat (só leitura).
 - `src/app.js`: a tela. `src/core/`: cálculo do ranking, leitura das mensagens, CSV e simulador.
 - Testes: `npm test`.

@@ -13,6 +13,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body {
   height: 100%;
@@ -20,8 +21,8 @@ html, body {
 }
 
 body {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
+  display: flex;
+  flex-direction: column;
   background: var(--fundo);
   color: var(--texto);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -66,6 +67,65 @@ button.secundario { background: transparent; }
 .rotulo { color: var(--texto-fraco); font-size: 12px; }
 .topo-acoes { display: flex; gap: 8px; }
 
+/* Transmissão: OBS → painel → sites */
+.transmissao {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--borda);
+  flex-wrap: wrap;
+}
+.tx-obs { display: flex; align-items: center; gap: 8px; }
+.tx-status { font-weight: 600; white-space: nowrap; }
+.tx-saidas { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+.tx-acoes { display: flex; gap: 6px; }
+.tx-aviso { color: var(--aviso); }
+.saida {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--cor-site);
+  border-radius: 8px;
+}
+.saida-nome { font-weight: 600; }
+.saida-estado { font-size: 12px; color: var(--texto-fraco); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saida-estado.no-ar { color: var(--dinheiro); }
+.saida-estado.erro { color: var(--erro); }
+.saida-estado.conectando { color: var(--aviso); }
+.saida button { padding: 3px 8px; font-size: 12px; }
+.saida .privado-aqui { border-color: var(--destaque); color: var(--destaque); background: transparent; }
+
+.faixa-privado {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--destaque);
+  color: #1a1a1a;
+  font-size: 16px;
+}
+.faixa-privado button { background: #1a1a1a; color: #fff; border-color: #1a1a1a; font-weight: 600; }
+
+.dlg {
+  max-width: 560px;
+  background: var(--painel);
+  color: var(--texto);
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+.dlg::backdrop { background: rgba(0, 0, 0, .6); }
+.dlg h2 { margin-top: 0; font-size: 18px; }
+.dlg li { margin-bottom: 8px; }
+.dlg code { background: var(--fundo); padding: 2px 6px; border-radius: 4px; user-select: all; }
+.dlg .copiar { padding: 2px 8px; font-size: 12px; margin-left: 4px; }
+.dlg-nota { color: var(--texto-fraco); font-size: 13px; }
+
 /* Ranking */
 .ranking {
   display: grid;
@@ -105,6 +165,7 @@ button.secundario { background: transparent; }
 
 /* Corpo: chat junto à esquerda, abas dos sites à direita */
 .corpo {
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(340px, 38%) 1fr;
   gap: 10px;
@@ -151,7 +212,6 @@ button.secundario { background: transparent; }
   cursor: pointer;
 }
 .item:hover { background: var(--painel-2); }
-.item[hidden] { display: none; }
 .item-site { font-size: 11px; color: var(--cor-site); font-weight: 600; text-transform: uppercase; }
 .item-usuario { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-fa { margin-left: 6px; font-weight: 400; font-size: 12px; color: var(--dinheiro); }

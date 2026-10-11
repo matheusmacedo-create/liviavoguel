@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "electron": "44.4.5"
+  },
+  "dependencies": {
+    "ffmpeg-static": "5.2.0"
   }
 }
