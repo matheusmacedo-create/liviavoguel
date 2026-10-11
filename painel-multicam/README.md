@@ -1,4 +1,4 @@
-# Painel Multicam (fases 2 e 3)
+# Painel Multicam (fases 2, 3 e 4)
 
 Programa de computador que junta numa tela só:
 
@@ -13,6 +13,8 @@ Programa de computador que junta numa tela só:
 - **Alerta "site esquentou"** com um bip, quando chegam várias gorjetas em pouco tempo num site.
 - **Abas com cada site**, já logado. Clique numa mensagem ou num card e a aba daquele site abre pra responder.
 - **Exportar sessão (CSV):** gera a planilha da fase 1 pronta, com uma linha por site.
+- **Histórico (fase 4):** o painel guarda cada live sozinho e mostra quanto cada site rende **por hora**, um mapa
+  de calor de **qual dia e horário rendem mais** e os **melhores horários para a agenda**.
 
 No chat, o painel **só lê**. Para responder, a modelo escreve na aba do próprio site. Ele não clica nem escreve
 nada nos sites sozinho.
@@ -144,12 +146,34 @@ Detalhes:
 - O painel só aceita o vídeo do próprio computador. Ninguém da rede consegue mandar vídeo para ele.
 - Fechar o painel encerra o repasse: os sites saem do ar mesmo que o OBS continue transmitindo.
 
+## Histórico e agenda (fase 4)
+
+O painel guarda a live sozinho: a cada minuto, ao exportar, ao zerar a sessão e ao fechar. Não precisa
+fazer nada. Clique em **Histórico** no topo para ver:
+
+- **Quanto cada site rende por hora de live**, o total, as gorjetas, os privados e o melhor horário de cada um.
+- **Mapa de calor** com os dias da semana e as horas: quanto mais claro o quadrado, mais a live rendeu
+  (R$ por hora, todos os sites somados). Passe o mouse para ver o valor. Quadrado tracejado é horário sem live.
+- **Melhores horários para a agenda:** os 5 horários que mais renderam. Só entram horários com pelo menos meia
+  hora de live somada, para alguns minutos de sorte não enganarem.
+- **Exportar histórico (CSV):** todas as lives, uma linha por site, nas colunas da planilha da fase 1.
+
+Como ler os números:
+- O R$ por hora de cada site considera a live inteira, como se o site tivesse ficado no ar o tempo todo.
+  Se você desligou um site no meio da live, o R$ por hora dele aparece menor do que foi.
+- A live que está acontecendo entra na conta depois de 10 minutos.
+- Quanto mais lives guardadas, mais confiável fica. Com 2 a 4 semanas já dá para montar a agenda.
+
+O histórico fica no computador, na pasta de dados do programa (no Windows, `%APPDATA%\painel-multicam`; no Mac,
+`~/Library/Application Support/painel-multicam`), um arquivo por configuração (`historico-sites.json`,
+`historico-ana.json`...). Para começar do zero, apague esse arquivo com o painel fechado.
+
 ## Limitações desta versão
 
 - Os seletores dos sites (menos o Chaturbate) ainda **precisam ser preenchidos**, como explicado acima.
   Não dava para descobrir sem entrar numa conta de modelo.
 - O painel não responde mensagens: clique na mensagem e responda na aba do site.
-- Os números ficam só enquanto o programa está aberto. **Exporte o CSV no fim de cada live.**
+- O histórico fica só neste computador. Para ter uma cópia, use **Exportar histórico (CSV)** de vez em quando.
 - O repasse foi testado com um OBS e sites simulados (ffmpeg), não com os sites de verdade. Na primeira live,
   confira a sala pública de cada site pelo celular, como no guia da fase 1.
 
@@ -158,6 +182,7 @@ Detalhes:
 - `main.cjs`: janela, abas isoladas, leitura da API do Chaturbate e o repasse da transmissão.
 - `repasse.js`: recebe o OBS (ffmpeg) e mantém um envio por site. `src/core/flv.js` copia o vídeo para cada
   site e faz o site que entra no meio começar num quadro-chave. `src/core/transmissao.js`: a regra do privado.
+- `src/core/historico.js`: análise das lives guardadas (R$ por hora, mapa por dia e hora, melhores horários).
 - `preload-site.cjs`: roda dentro de cada site e lê o chat (só leitura).
 - `src/app.js`: a tela. `src/core/`: cálculo do ranking, leitura das mensagens, CSV e simulador.
 - Testes: `npm test`.

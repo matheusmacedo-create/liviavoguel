@@ -6,6 +6,10 @@ contextBridge.exposeInMainWorld('painel', {
   aoStatus: (fn) => { ipcRenderer.on('status-leitura', (_e, s) => fn(s)); },
   iniciarLeituras: () => ipcRenderer.invoke('iniciar-leituras'),
   salvarCSV: (nome, conteudo) => ipcRenderer.invoke('salvar-csv', nome, conteudo),
+  historico: {
+    ler: () => ipcRenderer.invoke('historico-ler'),
+    salvar: (sessao) => ipcRenderer.invoke('historico-salvar', sessao),
+  },
   transmissao: {
     info: () => ipcRenderer.invoke('transmissao-info'),
     aoMudar: (fn) => { ipcRenderer.on('transmissao', (_e, estado) => fn(estado)); },

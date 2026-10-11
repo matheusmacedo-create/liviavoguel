@@ -14,22 +14,29 @@ const hora = (ts) => new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit',
 export function paraCSV(colunas, linhas) {
   const cabecalho = colunas.map((c) => escapar(c.titulo)).join(';');
   const corpo = linhas.map((l) => colunas.map((c) => escapar(c.valor(l))).join(';'));
-  return '﻿' + [cabecalho, ...corpo].join('\r\n') + '\r\n';
+  return '\uFEFF' + [cabecalho, ...corpo].join('\r\n') + '\r\n';
 }
 
+const colunasSessao = (resumoDe) => [
+  { titulo: 'Data', valor: (s) => data(resumoDe(s).inicio) },
+  { titulo: 'Início', valor: (s) => hora(resumoDe(s).inicio) },
+  { titulo: 'Fim', valor: (s) => hora(resumoDe(s).fim) },
+  { titulo: 'Site', valor: (s) => s.nome },
+  { titulo: 'Pico de pessoas', valor: (s) => s.pico || '' },
+  { titulo: 'Ganho (tokens/créditos)', valor: (s) => s.tokens },
+  { titulo: 'Ganho em R$', valor: (s) => numeroBR(s.reais) },
+  { titulo: 'Gorjetas', valor: (s) => s.gorjetas },
+  { titulo: 'Privados', valor: (s) => s.privados },
+  { titulo: 'Mensagens', valor: (s) => s.mensagens },
+  { titulo: 'Observação', valor: () => '' },
+];
+
 export function resumoParaCSV(resumo) {
-  const colunas = [
-    { titulo: 'Data', valor: () => data(resumo.inicio) },
-    { titulo: 'Início', valor: () => hora(resumo.inicio) },
-    { titulo: 'Fim', valor: () => hora(resumo.fim) },
-    { titulo: 'Site', valor: (s) => s.nome },
-    { titulo: 'Pico de pessoas', valor: (s) => s.pico || '' },
-    { titulo: 'Ganho (tokens/créditos)', valor: (s) => s.tokens },
-    { titulo: 'Ganho em R$', valor: (s) => numeroBR(s.reais) },
-    { titulo: 'Gorjetas', valor: (s) => s.gorjetas },
-    { titulo: 'Privados', valor: (s) => s.privados },
-    { titulo: 'Mensagens', valor: (s) => s.mensagens },
-    { titulo: 'Observação', valor: () => '' },
-  ];
-  return paraCSV(colunas, resumo.sites);
+  return paraCSV(colunasSessao(() => resumo), resumo.sites);
+}
+
+// Todas as lives guardadas, uma linha por site em cada live.
+export function historicoParaCSV(sessoes) {
+  const linhas = [...sessoes].sort((a, b) => a.inicio - b.inicio).flatMap((s) => s.sites.map((site) => ({ ...site, sessao: s })));
+  return paraCSV(colunasSessao((l) => l.sessao), linhas);
 }

@@ -1,5 +1,7 @@
 // O "daytrade": quanto cada site rende agora (R$/min) e na sessão inteira.
 
+import { inicioDaHora } from './historico.js';
+
 const MINUTO = 60_000;
 
 export function valorEmReais(site, tokens, cotacao = {}) {
@@ -24,6 +26,9 @@ export function criarMetricas(config, agora = () => Date.now()) {
   }
   // Quanto cada pessoa já deu nesta sessão, por site.
   const fas = new Map();
+  // Quanto entrou em cada hora cheia do relógio, por site (para o histórico da fase 4).
+  const porHora = {};
+  let temDados = false;
   const chaveFa = (site, usuario) => `${site}\n${usuario.toLowerCase()}`;
 
   function descartarAntigas(e, t) {
@@ -43,6 +48,7 @@ export function criarMetricas(config, agora = () => Date.now()) {
     if (!e) return null;
     const t = agora();
     ultimoEvento = t;
+    if (ev.tipo !== 'espectadores') temDados = true;
     const saida = { ...ev, ts: t };
 
     if (ev.tipo === 'mensagem') e.mensagens++;
@@ -58,6 +64,8 @@ export function criarMetricas(config, agora = () => Date.now()) {
       e.recentes.push({ ts: t, reais });
       descartarAntigas(e, t);
       saida.reais = reais;
+      const hora = (porHora[inicioDaHora(t)] ??= {});
+      hora[ev.site] = (hora[ev.site] ?? 0) + reais;
 
       if (ev.usuario) {
         const k = chaveFa(ev.site, ev.usuario);
@@ -108,7 +116,9 @@ export function criarMetricas(config, agora = () => Date.now()) {
 
   function resumo() {
     return {
+      id: inicio,
       inicio, fim: ultimoEvento,
+      porHora: structuredClone(porHora),
       sites: [...estado.values()].map((e) => ({
         id: e.site.id, nome: e.site.nome, pico: e.pico, tokens: e.tokens, reais: e.reais,
         gorjetas: e.gorjetas, privados: e.privados, mensagens: e.mensagens,
@@ -118,5 +128,5 @@ export function criarMetricas(config, agora = () => Date.now()) {
 
   const totalReais = () => [...estado.values()].reduce((s, e) => s + e.reais, 0);
 
-  return { registrar, fa, ranking, resumo, totalReais, inicio };
+  return { registrar, fa, ranking, resumo, totalReais, inicio, temDados: () => temDados };
 }
