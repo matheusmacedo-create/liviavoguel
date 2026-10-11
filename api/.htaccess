@@ -1,0 +1,14 @@
+# Backend de pagamentos. Só os endpoints públicos respondem por HTTP; configuração, esquema e módulos
+# são incluídos pelo PHP e nunca servidos.
+Options -Indexes
+<FilesMatch "^(config(\.example)?\.php|schema\.sql)$">
+  Require all denied
+</FilesMatch>
+# Cópias de editor e de segurança (config.php~, config.php.bak, .swp…) nunca são servidas: o texto sairia cru.
+<FilesMatch "(~|\.(bak|old|orig|save|swp|swo|tmp|dist|sql|log))$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Cache-Control "no-store"
+</IfModule>

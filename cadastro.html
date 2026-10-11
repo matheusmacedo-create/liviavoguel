@@ -38,7 +38,7 @@
         </div>
         <div class="campo">
           <label for="senha">Senha</label>
-          <input id="senha" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">
+          <input id="senha" type="password" required minlength="8" autocomplete="new-password" placeholder="Mínimo 8 caracteres">
         </div>
         <div class="campo">
           <label for="nascimento">Data de nascimento</label>
@@ -82,18 +82,22 @@
       const ok = [
         marcar("apelido", /^\w{3,20}$/.test(apelido) ? "" : "Use de 3 a 20 letras, números ou _"),
         marcar("email", /^\S+@\S+\.\S+$/.test(email) ? "" : "E-mail inválido"),
-        marcar("senha", $("senha").value.length >= 6 ? "" : "A senha precisa de 6 caracteres ou mais"),
+        marcar("senha", $("senha").value.length >= 8 ? "" : "A senha precisa de 8 caracteres ou mais"),
         marcar("nascimento", !nasc ? "Informe sua data de nascimento" : idade(nasc) < 18 ? "O site é só para maiores de 18 anos" : "")
       ].every(Boolean);
       if (!$("aceite").checked) { LV.toast("Você precisa aceitar os termos para continuar."); return; }
       if (!ok) return;
 
-      if (window.SITE.modoDemo) {
-        LV.entrar({ apelido, email });
-        LV.toast("Conta criada!");
-        setTimeout(() => (location.href = "creditos.html"), 700);
-      }
-      // Fora do modo demonstração: POST api/cadastro.php (feito na integração).
+      // LV.cadastrar: no modo demonstração simula; fora dele, POST api/cadastro.php.
+      LV.cadastrar({ apelido, email, senha: $("senha").value })
+        .then(() => {
+          LV.toast("Conta criada!");
+          setTimeout(() => (location.href = "creditos.html"), 700);
+        })
+        .catch((err) => {
+          if (err.campo && $(err.campo)) marcar(err.campo, err.message);
+          else LV.toast(err.message);
+        });
     });
   </script>
 </body>

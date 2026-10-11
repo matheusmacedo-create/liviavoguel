@@ -274,6 +274,7 @@
       clearInterval(timer);
       const total = pacote.creditos + pacote.bonus;
       if (S.modoDemo) LV.lancar(total, `Compra de pacote · ${reais(pacote.preco)}`);
+      else LV.sincronizar(); // os créditos já entraram no servidor; atualiza o saldo do topo
       const sala = window.MODELOS.find((m) => m.online) || window.MODELOS[0];
       etapa.innerHTML = `
         <div class="passos-checkout"><span class="feito">1. Pacote</span><span class="feito">2. Pagamento</span><span class="feito">3. Confirmação</span></div>

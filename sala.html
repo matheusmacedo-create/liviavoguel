@@ -149,11 +149,13 @@
     // ---------- Gorjetas ----------
     function darGorjeta(valor, recado) {
       if (LV.saldo() < valor) return LV.semCreditos(valor);
-      LV.lancar(-valor, `Gorjeta para ${m.nome}`);
-      LV.gravar(chaveMeta, metaAtual() + valor);
-      atualizarMeta();
-      postar(`💸 <b>${esc(LV.usuario().apelido)}</b> mandou ${valor} créditos${recado ? `: “${esc(recado)}”` : "!"}`, "gorjeta");
-      toast(`Gorjeta de ${valor} créditos enviada!`);
+      // Fora do modo demonstração, o débito é feito no servidor (api/gastar.php); recusado, não aparece no chat.
+      LV.lancar(-valor, `Gorjeta para ${m.nome}`, { tipo: "gorjeta", modelo: m.slug }).then(() => {
+        LV.gravar(chaveMeta, metaAtual() + valor);
+        atualizarMeta();
+        postar(`💸 <b>${esc(LV.usuario().apelido)}</b> mandou ${valor} créditos${recado ? `: “${esc(recado)}”` : "!"}`, "gorjeta");
+        toast(`Gorjeta de ${valor} créditos enviada!`);
+      }).catch(() => {});
     }
 
     function modalGorjeta(inicial) {
@@ -208,6 +210,7 @@
       // Com o backend, o pedido vai para a modelo aceitar e a cobrança é feita no servidor.
       const inicio = Date.now();
       let minutosCobrados = 0;
+      let encerrado = false;
       const faixa = document.createElement("div");
       faixa.className = "faixa-privado";
       faixa.innerHTML = `<span>🔒 Show privado · <span class="cronometro" id="p-tempo">00:00</span> · <span id="p-gasto">0</span> créditos</span>
@@ -218,7 +221,8 @@
 
       const cobrar = () => {
         if (LV.saldo() < m.precoPrivado) return encerrar("Seu saldo acabou. O show privado foi encerrado.");
-        LV.lancar(-m.precoPrivado, `Show privado com ${m.nome} (minuto ${minutosCobrados + 1})`);
+        LV.lancar(-m.precoPrivado, `Show privado com ${m.nome} (minuto ${minutosCobrados + 1})`, { tipo: "privado", modelo: m.slug })
+          .catch(() => encerrar("O minuto não pôde ser cobrado. O show privado foi encerrado."));
         minutosCobrados++;
         $("p-gasto").textContent = minutosCobrados * m.precoPrivado;
       };
@@ -230,6 +234,8 @@
       }, 1000);
 
       function encerrar(motivo) {
+        if (encerrado) return;
+        encerrado = true;
         clearInterval(relogio);
         faixa.remove();
         $("privado").disabled = false;
