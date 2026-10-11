@@ -340,6 +340,64 @@ verificar('ligar/desligar fica registrado', (int) lv_db()->query("SELECT COUNT(*
 [$s] = chamar('ao-vivo.php', 'POST', []);
 verificar('ao-vivo.php por POST: 405', $s, 405);
 
+// ============================================================================= perfil
+recomecar();
+criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$_GET = [];
+$perfilOk = ['nome' => 'Livia Voguel', 'cidade' => 'Niterói, RJ', 'bio' => "Oi!\n\nSou a   Livia.", 'tags' => ['Dança', ' dança ', '', 'Cosplay'], 'idiomas' => ['Português']];
+
+verificar('perfis: começa vazio', chamar('perfis.php')[1]['modelos'], []);
+$_SESSION = ['usuario_id' => 7];
+[$s, $c] = chamar('modelo-perfil.php', 'POST', $perfilOk);
+verificar('cliente não edita perfil: 401', [$s, $c['login_modelo'] ?? null], [401, true]);
+
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s, $c] = chamar('modelo-perfil.php', 'POST', $perfilOk);
+verificar('salvar perfil: 200', $s, 200);
+verificar('bio sem espaços e quebras repetidos', $c['perfil']['bio'], 'Oi! Sou a Livia.');
+verificar('interesses sem vazios e sem repetidos (maiúsculas não contam)', $c['perfil']['tags'], ['Dança', 'Cosplay']);
+$pub = chamar('perfis.php')[1]['modelos']['livia-voguel'];
+verificar('público vê o perfil salvo', [$pub['nome'], $pub['cidade'], $pub['idiomas']], ['Livia Voguel', 'Niterói, RJ', ['Português']]);
+
+$_POST = [];
+[$s] = chamar('modelo-perfil.php', 'POST', $perfilOk);
+verificar('salvar de novo sem mudar nada: 200', $s, 200);
+verificar('uma linha por modelo', (int) lv_db()->query('SELECT COUNT(*) FROM lv_modelos_perfil')->fetchColumn(), 1);
+[, $c] = chamar('modelo-perfil.php', 'POST', ['cidade' => 'Rio de Janeiro, RJ'] + $perfilOk);
+verificar('editar troca o que mudou', $c['perfil']['cidade'], 'Rio de Janeiro, RJ');
+
+$erros = [
+    'nome curto' => [['nome' => 'L'], 'nome'],
+    'nome longo' => [['nome' => str_repeat('a', 41)], 'nome'],
+    'nome que não é texto' => [['nome' => ['x']], 'nome'],
+    'bio longa' => [['bio' => str_repeat('a', 601)], 'bio'],
+    'cidade longa' => [['cidade' => str_repeat('a', 61)], 'cidade'],
+    'interesse longo' => [['tags' => [str_repeat('a', 21)]], 'tags'],
+    '11 interesses' => [['tags' => array_map(static fn($i) => "t$i", range(1, 11))], 'tags'],
+    'interesses fora de lista' => [['tags' => 'Dança, Cosplay'], 'tags'],
+    'interesse que não é texto' => [['tags' => [['x']]], 'tags'],
+    'sem idioma' => [['idiomas' => []], 'idiomas'],
+    '6 idiomas' => [['idiomas' => ['a1', 'a2', 'a3', 'a4', 'a5', 'a6']], 'idiomas'],
+];
+foreach ($erros as $nome => [$troca, $campo]) {
+    [$s, $c] = chamar('modelo-perfil.php', 'POST', $troca + $perfilOk);
+    verificar("perfil inválido ($nome): 422 no campo $campo", [$s, $c['campo'] ?? null], [422, $campo]);
+}
+verificar('perfil inválido não muda o salvo', chamar('perfis.php')[1]['modelos']['livia-voguel']['cidade'], 'Rio de Janeiro, RJ');
+
+$xss = ['nome' => '<img src=x onerror=alert(1)>', 'bio' => '<script>alert(1)</script>'] + $perfilOk;
+[, $c] = chamar('modelo-perfil.php', 'POST', $xss);
+verificar('HTML é guardado como texto (a tela escapa ao mostrar)', $c['perfil']['nome'], '<img src=x onerror=alert(1)>');
+verificar('JSON da resposta não quebra com HTML', json_decode(json_encode($c), true)['perfil']['bio'], '<script>alert(1)</script>');
+
+[$s] = chamar('modelo-perfil.php', 'POST', $perfilOk, ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('editar perfil vindo de outro site: 403', $s, 403);
+[$s] = chamar('perfis.php', 'POST', []);
+verificar('perfis.php por POST: 405', $s, 405);
+lv_db()->exec("INSERT INTO lv_modelos_perfil (slug, nome, cidade, bio, tags, idiomas, atualizado_em) VALUES ('removida', 'X', '', '', '[]', '[]', '2026-01-01 00:00:00')");
+verificar('perfil de modelo fora de LV_MODELOS não aparece', array_keys(chamar('perfis.php')[1]['modelos']), ['livia-voguel']);
+
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
 $js = preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', (string) file_get_contents($raiz . '/assets/js/modelos.js'));

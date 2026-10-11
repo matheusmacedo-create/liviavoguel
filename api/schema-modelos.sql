@@ -22,3 +22,15 @@ CREATE TABLE IF NOT EXISTS lv_modelos_ao_vivo (
   desde DATETIME NULL,                       -- quando entrou ao vivo (null = offline)
   visto_em DATETIME NOT NULL                 -- último aviso do painel
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Perfil público que a modelo edita no painel ("Meu perfil"). Sem linha aqui, vale o que está em
+-- assets/js/modelos.js. tags e idiomas são listas em JSON.
+CREATE TABLE IF NOT EXISTS lv_modelos_perfil (
+  slug VARCHAR(40) NOT NULL PRIMARY KEY,
+  nome VARCHAR(40) NOT NULL,
+  cidade VARCHAR(60) NOT NULL,
+  bio TEXT NOT NULL,
+  tags TEXT NOT NULL,
+  idiomas TEXT NOT NULL,
+  atualizado_em DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

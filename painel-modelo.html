@@ -25,6 +25,7 @@
 
   <script src="assets/js/config.js"></script>
   <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/perfis.js"></script>
   <script src="assets/js/app.js"></script>
   <script>
     /*
@@ -212,21 +213,22 @@
         </div>`,
 
       perfil: () => `
-        <form class="painel" novalidate>
+        <form class="painel" id="form-perfil" novalidate>
           <h2>Meu perfil</h2>
+          <p style="color:var(--texto-2);margin-bottom:14px">O que você salvar aqui aparece na página inicial e na sua sala.</p>
           <div class="linha">
-            <div class="campo"><label for="p-nome">Nome artístico</label><input id="p-nome" value="${esc(m.nome)}"></div>
-            <div class="campo"><label for="p-cidade">Cidade</label><input id="p-cidade" value="${esc(m.cidade)}"></div>
+            <div class="campo"><label for="p-nome">Nome artístico</label><input id="p-nome" value="${esc(m.nome)}" maxlength="40"></div>
+            <div class="campo"><label for="p-cidade">Cidade</label><input id="p-cidade" value="${esc(m.cidade)}" maxlength="60"></div>
           </div>
-          <div class="campo"><label for="p-bio">Sobre mim</label><textarea id="p-bio" maxlength="600">${esc(m.bio)}</textarea></div>
+          <div class="campo"><label for="p-bio">Sobre mim</label><textarea id="p-bio" maxlength="600">${esc(m.bio)}</textarea><span class="ajuda">Até 600 caracteres</span></div>
           <div class="linha">
-            <div class="campo"><label for="p-tags">Interesses (separados por vírgula)</label><input id="p-tags" value="${esc(m.tags.join(", "))}"></div>
-            <div class="campo"><label for="p-idiomas">Idiomas</label><input id="p-idiomas" value="${esc(m.idiomas.join(", "))}"></div>
+            <div class="campo"><label for="p-tags">Interesses (separados por vírgula)</label><input id="p-tags" value="${esc(m.tags.join(", "))}"><span class="ajuda">Até 10</span></div>
+            <div class="campo"><label for="p-idiomas">Idiomas (separados por vírgula)</label><input id="p-idiomas" value="${esc(m.idiomas.join(", "))}"><span class="ajuda">De 1 a 5</span></div>
           </div>
           <div class="campo"><label>Fotos</label>
             <div class="galeria">${[m.foto, ...m.galeria].map((f) => `<img src="${esc(f)}" alt="">`).join("")}</div>
-            <span class="ajuda">Envio de fotos chega junto com o backend. Por enquanto, troque os arquivos em assets/img/.</span></div>
-          <button class="btn btn-primario" data-salvar>Salvar perfil</button>
+            <span class="ajuda">O envio de fotos pelo painel ainda não existe. Por enquanto, troque os arquivos em assets/img/.</span></div>
+          <button class="btn btn-primario" id="salvar-perfil">Salvar perfil</button>
         </form>`,
 
       seguranca: () => `
@@ -305,6 +307,46 @@
         ? "Sua sala aparece como ao vivo no site. Deixe esta página aberta enquanto estiver transmitindo."
         : "Ligue quando começar a transmitir. Sua sala passa a aparecer como ao vivo no site.";
     });
+    // ---------- Meu perfil (api/modelo-perfil.php) ----------
+    function marcarErro(id, msg) {
+      const campo = document.getElementById(id)?.closest(".campo");
+      if (!campo) return;
+      campo.classList.toggle("erro", !!msg);
+      campo.querySelector(".msg-erro")?.remove();
+      if (msg) campo.insertAdjacentHTML("beforeend", `<span class="msg-erro">${esc(msg)}</span>`);
+    }
+    conteudo.addEventListener("submit", async (e) => {
+      if (e.target.id !== "form-perfil") return;
+      e.preventDefault();
+      const valor = (id) => document.getElementById(id).value;
+      // Sem vazios e sem repetidos (maiúsculas não contam; fica a primeira grafia), igual ao servidor.
+      const lista = (id) => {
+        const vistos = new Set();
+        return valor(id).split(",").map((t) => t.trim().replace(/\s+/g, " "))
+          .filter((t) => t && !vistos.has(t.toLowerCase()) && vistos.add(t.toLowerCase()));
+      };
+      const perfil = { nome: valor("p-nome").trim(), cidade: valor("p-cidade").trim(), bio: valor("p-bio").trim(), tags: lista("p-tags"), idiomas: lista("p-idiomas") };
+      ["p-nome", "p-cidade", "p-bio", "p-tags", "p-idiomas"].forEach((id) => marcarErro(id, ""));
+      const botao = document.getElementById("salvar-perfil");
+      botao.disabled = true;
+      try {
+        if (S.modoDemo) {
+          if (perfil.nome.length < 2) throw Object.assign(new Error("O nome artístico precisa ter de 2 a 40 caracteres."), { campo: "nome" });
+          if (!perfil.idiomas.length) throw Object.assign(new Error("Informe de 1 a 5 idiomas."), { campo: "idiomas" });
+          LVPerfis.salvarDemo(m.slug, perfil);
+        } else {
+          const r = await LV.api("modelo-perfil.php", perfil);
+          LVPerfis.aplicar({ [m.slug]: r.perfil });
+        }
+        LV.toast("Perfil salvo! Já aparece no site.");
+        conteudo.innerHTML = secoes.perfil(); // mostra como ficou salvo (ex.: interesses repetidos somem)
+      } catch (err) {
+        if (err.status === 401) return location.replace("modelo-entrar.html");
+        if (err.campo) marcarErro("p-" + err.campo, err.message);
+        LV.toast(err.message);
+        botao.disabled = false;
+      }
+    });
     conteudo.addEventListener("submit", async (e) => {
       if (e.target.id !== "form-senha") return;
       e.preventDefault();
@@ -338,6 +380,7 @@
       }
       m = conta && window.MODELOS.find((x) => x.slug === conta.slug);
       if (!m) return location.replace("modelo-entrar.html");
+      await LVPerfis.carregar(); // o formulário abre com o perfil salvo, não com o de modelos.js
       await carregarAoVivo();
       // Painel reaberto com a sala ligada: volta a avisar o servidor que continua aberto.
       if (aoVivo && !S.modoDemo) await definirAoVivo(true).catch(() => {});
