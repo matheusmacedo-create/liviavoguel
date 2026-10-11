@@ -47,3 +47,53 @@ function lv_stream_salvar(string $slug, array $c): void
     $pdo->prepare('INSERT INTO lv_modelos_stream (slug, hls_url, rtmp_servidor, rtmp_chave, atualizado_em) VALUES (?, ?, ?, ?, ?)')
         ->execute([$slug, $c['hls_url'], $c['rtmp_servidor'], $c['rtmp_chave'], lv_agora()]);
 }
+
+/** Freio para quem tenta adivinhar chaves em api/stream-evento.php: avisos com chave errada por IP em 15 minutos. */
+const LV_STREAM_ERROS = 20;
+
+/** Modelo (slug) dona da chave de transmissão, só se a conta dela estiver ativa. Aceita "live/<chave>" (caminho). */
+function lv_stream_dona_da_chave(string $chave): ?string
+{
+    $chave = basename(str_replace('\\', '/', trim($chave)));
+    $chave = explode('?', $chave, 2)[0]; // o nginx-rtmp manda junto o que vier depois de "?" na chave
+    if ($chave === '' || strlen($chave) > 255) {
+        return null;
+    }
+    $stmt = lv_db()->prepare('SELECT s.slug FROM lv_modelos_stream s JOIN lv_modelos_contas c ON c.slug = s.slug
+        WHERE s.rtmp_chave = ? AND c.ativa = 1');
+    $stmt->execute([$chave]);
+    $slug = $stmt->fetchColumn();
+    return $slug === false ? null : (string) $slug;
+}
+
+/** O OBS da modelo começou (ou continua) a transmitir: abre ou renova o aviso. Devolve true se acabou de começar. */
+function lv_stream_publicando(string $slug): bool
+{
+    $pdo = lv_db();
+    $agora = lv_agora();
+    $limite = gmdate('Y-m-d H:i:s', time() - LV_PUBLICANDO_VALIDADE);
+    $stmt = $pdo->prepare('UPDATE lv_modelos_publicando SET visto_em = ? WHERE slug = ? AND visto_em >= ?');
+    $stmt->execute([$agora, $slug, $limite]);
+    if ($stmt->rowCount() > 0) {
+        return false;
+    }
+    // Sem linha, ou uma velha (o aviso de fim se perdeu): começa de novo.
+    $pdo->prepare('DELETE FROM lv_modelos_publicando WHERE slug = ?')->execute([$slug]);
+    try {
+        $pdo->prepare('INSERT INTO lv_modelos_publicando (slug, desde, visto_em) VALUES (?, ?, ?)')->execute([$slug, $agora, $agora]);
+    } catch (PDOException $e) {
+        if (!lv_e_duplicado($e)) {
+            throw $e;
+        }
+        return false; // outro aviso chegou junto
+    }
+    return true;
+}
+
+/** O OBS parou: tira o aviso. Devolve true se havia transmissão. */
+function lv_stream_parou(string $slug): bool
+{
+    $stmt = lv_db()->prepare('DELETE FROM lv_modelos_publicando WHERE slug = ?');
+    $stmt->execute([$slug]);
+    return $stmt->rowCount() > 0;
+}

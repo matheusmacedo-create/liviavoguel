@@ -119,6 +119,7 @@ function lv_equipe_ativar_modelo(int $id, bool $ativa): ?string
     lv_db()->prepare('UPDATE lv_modelos_contas SET ativa = ? WHERE id = ?')->execute([$ativa ? 1 : 0, $id]);
     if (!$ativa) {
         lv_ao_vivo_definir((string) $conta['slug'], false);
+        lv_db()->prepare('DELETE FROM lv_modelos_publicando WHERE slug = ?')->execute([(string) $conta['slug']]);
     }
     return null;
 }

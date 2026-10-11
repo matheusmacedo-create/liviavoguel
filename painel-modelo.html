@@ -176,7 +176,8 @@
           <div class="campo"><label>Chave de transmissão</label>
             <div class="segredo"><input readonly type="password" value="${esc(transmissao.rtmp_chave)}" id="chave"><button class="btn btn-pequeno" id="mostrar">Mostrar</button><button class="btn btn-pequeno" data-copiar="chave">Copiar</button></div>
             <span class="ajuda">Nunca compartilhe a chave. Com ela, qualquer pessoa transmite na sua sala.</span></div>
-          <p style="color:var(--texto-2);font-size:.85rem">Depois de iniciar no OBS, ligue o botão <strong>Ao vivo</strong> no Painel para a sua sala aparecer no site.</p>`
+          <p style="color:var(--texto-2);font-size:.85rem">Quando o OBS começa a transmitir, a sua sala entra ao vivo sozinha e sai quando você para.
+            Se em um minuto ela não aparecer ao vivo, ligue o botão <strong>Ao vivo</strong> no Painel.</p>`
           : `<div class="vazio"><div class="icone">📡</div>${S.modoDemo ? "No modo demonstração não há dados de transmissão." : "A equipe ainda não configurou a sua transmissão."}<br>Assim que configurar, o servidor e a chave aparecem aqui.</div>`}
         </div>
         <div class="painel">
@@ -586,12 +587,27 @@
         LV.toast(err.message);
       }
       chave.disabled = false;
+      pintarStatus();
+    });
+    function pintarStatus() {
+      const chave = document.getElementById("status");
+      if (!chave || chave.disabled) return;
       chave.checked = aoVivo;
       document.getElementById("status-txt").textContent = aoVivo ? "Ao vivo" : "Offline";
       document.getElementById("status-ajuda").textContent = aoVivo
         ? "Sua sala aparece como ao vivo no site. Deixe esta página aberta enquanto estiver transmitindo."
         : "Ligue quando começar a transmitir. Sua sala passa a aparecer como ao vivo no site.";
-    });
+    }
+    // O OBS também liga e desliga a sala (aviso do servidor de vídeo): a chave acompanha.
+    if (!S.modoDemo) setInterval(() => {
+      if (!m || document.hidden) return;
+      fetch("api/ao-vivo.php", { credentials: "same-origin" }).then((r) => (r.ok ? r.json() : null)).then((r) => {
+        if (!r || !r.modelos || !r.modelos[m.slug]) return; // falha de rede: mantém o que está na tela
+        aoVivo = !!r.modelos[m.slug].online;
+        if (!aoVivo) clearInterval(avisos);
+        pintarStatus();
+      }).catch(() => {});
+    }, 30000);
     // ---------- Configurar sala (api/modelo-sala.php) ----------
     conteudo.addEventListener("submit", async (e) => {
       if (e.target.id !== "form-sala") return;
@@ -715,8 +731,12 @@
       await LVPerfis.carregar(); // os formulários abrem com o que está salvo, não com o de modelos.js
       await LVSalas.carregar();
       await carregarAoVivo();
-      // Painel reaberto com a sala ligada: volta a avisar o servidor que continua aberto.
-      if (aoVivo && !S.modoDemo) await definirAoVivo(true).catch(() => {});
+      // Painel reaberto com a sala ligada pelo botão: volta a avisar o servidor que continua aberto.
+      // Ligada só pelo OBS, não: senão o botão "seguraria" a sala depois que o OBS parar.
+      if (aoVivo && !S.modoDemo) {
+        const eu = await LV.api("modelo-ao-vivo.php").catch(() => null);
+        if (eu && eu.painel) await definirAoVivo(true).catch(() => {});
+      }
       document.getElementById("painel").hidden = false;
       window.addEventListener("hashchange", abrir);
       abrir();

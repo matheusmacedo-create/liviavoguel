@@ -1206,6 +1206,99 @@ $_GET = ['modelo' => 'livia-voguel'];
 $_GET = [];
 verificar('ao vivo sem transmissão configurada: sem link', [$c['online'], $c['hls_url']], [true, null]);
 
+// ============================================================================= ao vivo automático (aviso do servidor de vídeo)
+recomecar();
+$idLivia = criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+lv_stream_salvar('livia-voguel', ['hls_url' => 'https://video.exemplo.com/l/index.m3u8', 'rtmp_servidor' => 'rtmp://ingest.exemplo.com/live', 'rtmp_chave' => 'sk_ABC123']);
+$_SESSION = [];
+$_GET = [];
+/** Chama api/stream-evento.php como o servidor de vídeo: formulário (nginx-rtmp, curl -d) ou JSON. */
+function aviso_video(array $campos, bool $json = false, string $ip = '198.51.100.7'): array
+{
+    $_SERVER = ['REQUEST_METHOD' => 'POST', 'REMOTE_ADDR' => $ip, 'CONTENT_TYPE' => $json ? 'application/json' : 'application/x-www-form-urlencoded'];
+    $GLOBALS['LV_CORPO_TESTE'] = $json ? json_encode($campos) : http_build_query($campos);
+    try {
+        include dirname(__DIR__) . '/api/stream-evento.php';
+    } catch (LvResposta $r) {
+        return [$r->status, $r->corpo];
+    }
+    throw new LogicException('stream-evento.php terminou sem resposta');
+}
+$online = static fn(): bool => lv_ao_vivo_todas()['livia-voguel']['online'];
+
+[$s] = chamar('stream-evento.php');
+verificar('aviso por GET: 405', $s, 405);
+[$s] = aviso_video(['evento' => 'qualquer', 'chave' => 'sk_ABC123']);
+verificar('evento desconhecido: 422', $s, 422);
+[$s] = aviso_video(['call' => 'publish', 'name' => 'chave-errada']);
+verificar('chave errada: 403 (o nginx-rtmp recusa a transmissão)', [$s, $online()], [403, false]);
+
+[$s, $c] = aviso_video(['call' => 'publish', 'app' => 'live', 'name' => 'sk_ABC123']);
+verificar('nginx-rtmp on_publish: sala ao vivo sem o botão do painel', [$s, $c['online'], $online()], [200, true, true]);
+verificar('aviso de início registrado', lv_contar_eventos('ao_vivo', 's:livia-voguel', 60), 1);
+[$s] = aviso_video(['call' => 'update_publish', 'name' => 'sk_ABC123']);
+verificar('on_update renova sem registrar de novo', [$s, lv_contar_eventos('ao_vivo', 's:livia-voguel', 60)], [200, 1]);
+$_SESSION = [];
+lv_db()->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES ('fb@exemplo.com.br', 'fb_1', 'x', '2026-01-01 00:00:00')");
+lv_logar((int) lv_db()->lastInsertId(), 'x');
+$_GET = ['modelo' => 'livia-voguel'];
+[, $c] = chamar('stream.php');
+$_GET = [];
+$_SESSION = [];
+verificar('transmitindo pelo OBS: cliente recebe o link do vídeo', [$c['online'], $c['hls_url']], [true, 'https://video.exemplo.com/l/index.m3u8']);
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s, $c] = chamar('modelo-ao-vivo.php');
+verificar('painel sabe que foi o OBS (não re-liga o botão)', [$s, $c['online'], $c['painel']], [200, true, false]);
+$_SESSION = [];
+[$s] = chamar('modelo-ao-vivo.php');
+verificar('status da origem sem login: 401', $s, 401);
+verificar('público não diz se foi o botão ou o OBS', array_keys(chamar('ao-vivo.php')[1]['modelos']['livia-voguel']), ['online', 'desde']);
+[$s, $c] = aviso_video(['call' => 'publish_done', 'name' => 'sk_ABC123']);
+verificar('nginx-rtmp on_publish_done: sala sai do ao vivo', [$s, $c['online'], $online()], [200, false, false]);
+
+[$s] = aviso_video(['evento' => 'inicio', 'chave' => 'live/sk_ABC123'], true);
+verificar('genérico em JSON, chave com caminho (MediaMTX): ao vivo', [$s, $online()], [200, true]);
+[$s] = aviso_video(['evento' => 'fim', 'chave' => 'sk_ABC123?token=1']);
+verificar('genérico fim, chave com ?parâmetros: offline', [$s, $online()], [200, false]);
+
+// Desligar no painel depois que o OBS começou vence o aviso; uma nova transmissão liga de novo.
+aviso_video(['evento' => 'inicio', 'chave' => 'sk_ABC123']);
+lv_db()->exec("UPDATE lv_modelos_publicando SET desde = '" . gmdate('Y-m-d H:i:s', time() - 120) . "'");
+lv_ao_vivo_definir('livia-voguel', false);
+verificar('desligou no painel com o OBS ligado: offline', $online(), false);
+aviso_video(['evento' => 'aviso', 'chave' => 'sk_ABC123']);
+verificar('renovação do OBS não religa o que ela desligou', $online(), false);
+aviso_video(['evento' => 'fim', 'chave' => 'sk_ABC123']);
+lv_db()->exec("UPDATE lv_modelos_ao_vivo SET visto_em = '" . gmdate('Y-m-d H:i:s', time() - 60) . "'");
+aviso_video(['evento' => 'inicio', 'chave' => 'sk_ABC123']);
+verificar('transmissão nova depois de desligar: ao vivo de novo', $online(), true);
+// O desde é o começo da transmissão.
+lv_db()->exec("UPDATE lv_modelos_ao_vivo SET visto_em = '2026-01-01 09:00:00'"); // o desligar foi antes
+lv_db()->exec("UPDATE lv_modelos_publicando SET desde = '2026-01-01 10:00:00'");
+verificar('desde = início da transmissão', lv_ao_vivo_todas()['livia-voguel']['desde'], '2026-01-01T10:00:00Z');
+
+// Aviso de fim perdido: depois de LV_PUBLICANDO_VALIDADE sem renovação, sai sozinho.
+lv_db()->exec("UPDATE lv_modelos_publicando SET visto_em = '" . gmdate('Y-m-d H:i:s', time() - LV_PUBLICANDO_VALIDADE - 10) . "'");
+verificar('aviso velho (fim perdido): offline', $online(), false);
+aviso_video(['evento' => 'aviso', 'chave' => 'sk_ABC123']);
+verificar('aviso velho renovado conta como começo novo', [$online(), lv_ao_vivo_todas()['livia-voguel']['desde'] !== '2026-01-01T10:00:00Z'], [true, true]);
+
+// Conta bloqueada: a sala cai e a chave deixa de valer.
+lv_equipe_ativar_modelo($idLivia, false);
+verificar('bloquear derruba a transmissão', $online(), false);
+[$s] = aviso_video(['call' => 'publish', 'name' => 'sk_ABC123']);
+verificar('conta bloqueada: OBS recusado (403)', [$s, $online()], [403, false]);
+lv_equipe_ativar_modelo($idLivia, true);
+
+// Freio contra adivinhar chaves.
+for ($i = 0; $i < LV_STREAM_ERROS; $i++) {
+    aviso_video(['call' => 'publish', 'name' => 'tentativa' . $i], false, '192.0.2.50');
+}
+[$s] = aviso_video(['call' => 'publish', 'name' => 'sk_ABC123'], false, '192.0.2.50');
+verificar('chaves erradas demais do mesmo IP: 429 (até com a certa)', $s, 429);
+[$s] = aviso_video(['call' => 'publish', 'name' => 'sk_ABC123']);
+verificar('outro IP continua avisando', $s, 200);
+
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
 $js = preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', (string) file_get_contents($raiz . '/assets/js/modelos.js'));

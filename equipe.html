@@ -103,6 +103,8 @@
     }
 
     document.addEventListener("click", (e) => {
+      const copiarCampo = e.target.closest("[data-copiar-campo]");
+      if (copiarCampo) { navigator.clipboard?.writeText(document.getElementById(copiarCampo.dataset.copiarCampo).value); LV.toast("Copiado!"); }
       const copiar = e.target.closest("[data-copiar]");
       if (copiar) { navigator.clipboard?.writeText(copiar.dataset.copiar); LV.toast("Chave Pix copiada."); }
       const pago = e.target.closest("[data-pago]");
@@ -160,6 +162,9 @@
           <div class="campo"><label for="st-servidor">Servidor do OBS (RTMP)</label><input id="st-servidor" maxlength="255" placeholder="rtmps://…/live" value="${esc(c.rtmp_servidor)}"></div>
           <div class="campo"><label for="st-chave">Chave de transmissão</label><input id="st-chave" maxlength="255" autocomplete="off" value="${esc(c.rtmp_chave)}">
             <span class="ajuda">Segredo: quem tem a chave transmite na sala dela. Deixe os três vazios para desligar.</span></div>
+          <div class="campo"><label for="st-aviso">Aviso automático de ao vivo (no servidor de vídeo)</label>
+            <div class="segredo"><input id="st-aviso" readonly value="${esc(new URL("api/stream-evento.php", location.href).href)}"><button class="btn btn-pequeno" type="button" data-copiar-campo="st-aviso">Copiar</button></div>
+            <span class="ajuda">Configure no servidor de vídeo para a sala entrar e sair do ao vivo sozinha quando o OBS começa e para (passo a passo no README, "Ao vivo automático").</span></div>
           <div class="acoes"><button class="btn btn-primario btn-bloco" id="confirmar">Salvar</button>
             <button class="btn btn-bloco" data-fechar>Cancelar</button></div>`, { largo: true });
         md.querySelector("#confirmar").addEventListener("click", async () => {
