@@ -204,15 +204,7 @@
           ${tabelaGanhos(ganhos.periodo.lancamentos, "Nenhum ganho neste período.")}
           <p style="color:var(--texto-2);font-size:.85rem;margin-top:12px">Cada crédito recebido vale ${dinheiro(ganhos.repasse_centavos)} para você. Horários de Brasília.</p>
         </div>
-        <div class="painel">
-          <h2>Dados para saque (Pix)</h2>
-          <p style="color:var(--texto-2);font-size:.9rem;margin-bottom:14px">Por enquanto, os saques são combinados com a equipe do site.</p>
-          <div class="linha">
-            <div class="campo"><label for="tipo-chave">Tipo de chave</label><select id="tipo-chave"><option>CPF</option><option>E-mail</option><option>Celular</option><option>Aleatória</option></select></div>
-            <div class="campo"><label for="chave-pix">Chave Pix</label><input id="chave-pix"></div>
-          </div>
-          <button class="btn btn-primario" data-salvar>Salvar</button>
-        </div>`,
+        ${secaoSaques()}`,
 
       perfil: () => `
         <form class="painel" id="form-perfil" novalidate>
@@ -279,6 +271,101 @@
           <button class="btn btn-primario" id="salvar-sala">Salvar</button>
         </form>`
     };
+
+    // ---------- Saques (api/modelo-saque.php) ----------
+    // A modelo salva a chave Pix e pede o saque de tudo o que está disponível; a equipe paga e marca como pago.
+    let saques = null;
+    const TIPOS_PIX = { cpf: "CPF", email: "E-mail", celular: "Celular", aleatoria: "Chave aleatória" };
+    const STATUS_SAQUE = { pendente: ["⏳ Esperando pagamento", "#ffc94a"], pago: ["✓ Pago", "var(--verde)"], recusado: ["✕ Recusado", "#ff7a90"] };
+    async function carregarSaques() {
+      if (S.modoDemo) return (saques = null);
+      try { saques = await LV.api("modelo-saque.php"); } catch (err) {
+        if (err.status === 401) location.replace("modelo-entrar.html");
+        saques = null;
+      }
+    }
+    function secaoSaques() {
+      if (S.modoDemo) {
+        return `<div class="painel"><h2>Saques</h2><div class="vazio"><div class="icone">🏦</div>
+          No modo demonstração não há saques.<br>Com o servidor no ar, aqui você cadastra a chave Pix e pede o saque.</div></div>`;
+      }
+      if (!saques) return `<div class="painel"><h2>Saques</h2>${semGanhos}</div>`;
+      const d = saques.disponivel;
+      const pendente = saques.saques.some((x) => x.status === "pendente");
+      const podePedir = saques.pix && !pendente && d.centavos >= saques.minimo_centavos;
+      const motivo = !saques.pix ? "Cadastre a chave Pix abaixo para pedir saques."
+        : pendente ? "Você já tem um saque esperando pagamento."
+        : d.centavos < saques.minimo_centavos ? `O saque mínimo é de ${dinheiro(saques.minimo_centavos)}.` : "";
+      return `
+        <div class="painel">
+          <div class="painel-topo"><h2>Saques</h2></div>
+          <div class="cards-numeros" style="margin-bottom:14px">
+            <div class="numero destaque"><small>Disponível para saque</small><strong>${dinheiro(d.centavos)}</strong></div>
+            <div class="numero"><small>Créditos disponíveis</small><strong>${d.creditos}</strong></div>
+          </div>
+          <button class="btn btn-primario" id="pedir-saque" ${podePedir ? "" : "disabled"}>Pedir saque de ${dinheiro(d.centavos)}</button>
+          ${motivo ? `<p class="ajuda" style="color:var(--texto-2);font-size:.85rem;margin-top:10px">${esc(motivo)}</p>` : ""}
+          <p style="color:var(--texto-2);font-size:.85rem;margin-top:10px">O saque leva tudo o que está disponível. A equipe paga pelo Pix e o pedido aparece como pago aqui.</p>
+        </div>
+        <form class="painel" id="form-pix" novalidate>
+          <h2>Chave Pix para receber</h2>
+          <div class="linha">
+            <div class="campo"><label for="tipo-chave">Tipo de chave</label><select id="tipo-chave">
+              ${Object.entries(TIPOS_PIX).map(([v, t]) => `<option value="${v}" ${saques.pix?.tipo === v ? "selected" : ""}>${t}</option>`).join("")}
+            </select></div>
+            <div class="campo"><label for="chave-pix">Chave Pix</label><input id="chave-pix" value="${esc(saques.pix?.chave ?? "")}" maxlength="80" autocomplete="off"></div>
+          </div>
+          <button class="btn" id="salvar-pix">Salvar chave</button>
+        </form>
+        <div class="painel">
+          <h2>Histórico de saques</h2>
+          ${saques.saques.length ? `<div class="tabela-rolagem"><table class="tabela">
+            <thead><tr><th>Pedido em</th><th style="text-align:right">Valor</th><th class="col-opcional">Chave</th><th>Situação</th></tr></thead>
+            <tbody>${saques.saques.map((x) => `<tr>
+              <td>${horaBrasilia(x.pedido_em)}</td>
+              <td style="text-align:right;white-space:nowrap">${dinheiro(x.centavos)}</td>
+              <td class="col-opcional">${esc(TIPOS_PIX[x.pix.tipo] || x.pix.tipo)}: ${esc(x.pix.chave)}</td>
+              <td><span style="color:${STATUS_SAQUE[x.status]?.[1] || "inherit"};font-weight:600">${STATUS_SAQUE[x.status]?.[0] || esc(x.status)}</span>
+                ${x.pago_em ? `<br><small style="color:var(--texto-2)">${horaBrasilia(x.pago_em)}</small>` : ""}
+                ${x.observacao ? `<br><small style="color:var(--texto-2)">${esc(x.observacao)}</small>` : ""}</td>
+            </tr>`).join("")}</tbody></table></div>`
+            : `<div class="vazio"><div class="icone">🏦</div>Nenhum saque pedido ainda.</div>`}
+        </div>`;
+    }
+    conteudo.addEventListener("submit", async (e) => {
+      if (e.target.id !== "form-pix") return;
+      e.preventDefault();
+      marcarErro("chave-pix", "");
+      try {
+        saques = await LV.api("modelo-saque.php", { acao: "pix", tipo: document.getElementById("tipo-chave").value, chave: document.getElementById("chave-pix").value });
+        LV.toast("Chave Pix salva!");
+        abrir();
+      } catch (err) {
+        if (err.status === 401) return location.replace("modelo-entrar.html");
+        if (err.campo === "chave") marcarErro("chave-pix", err.message);
+        LV.toast(err.message);
+      }
+    });
+    conteudo.addEventListener("click", (e) => {
+      if (e.target.id !== "pedir-saque" || !saques) return;
+      const md = LV.modal(`
+        <div class="modal-icone">🏦</div>
+        <h2>Pedir saque de ${dinheiro(saques.disponivel.centavos)}?</h2>
+        <p>O valor vai para a chave ${esc(TIPOS_PIX[saques.pix.tipo])}: <strong>${esc(saques.pix.chave)}</strong>. Confira antes de confirmar.</p>
+        <div class="acoes"><button class="btn btn-primario btn-bloco" id="confirmar-saque">Confirmar saque</button>
+          <button class="btn btn-bloco" data-fechar>Cancelar</button></div>`);
+      md.querySelector("#confirmar-saque").addEventListener("click", async () => {
+        md.fechar();
+        try {
+          saques = await LV.api("modelo-saque.php", { acao: "pedir" });
+          LV.toast("Saque pedido! Ele aparece como pago quando a equipe fizer o Pix.");
+          abrir();
+        } catch (err) {
+          if (err.status === 401) return location.replace("modelo-entrar.html");
+          LV.toast(err.message);
+        }
+      });
+    });
 
     // ---------- Chat: moderação (api/modelo-chat.php) ----------
     let chatTimer = null;
@@ -352,7 +439,7 @@
       document.querySelectorAll("#lateral a").forEach((a) => a.classList.toggle("ativo", a.hash === "#" + nome));
       if (nome === "inicio" || nome === "ganhos") {
         conteudo.innerHTML = `<div class="vazio"><span class="girando" style="display:inline-block"></span><br>Carregando seus ganhos...</div>`;
-        await carregarGanhos();
+        await Promise.all([carregarGanhos(), nome === "ganhos" ? carregarSaques() : null]);
         if ((location.hash.slice(1) || "inicio") !== nome && location.hash.slice(1) in secoes) return; // trocou de aba enquanto carregava
       }
       conteudo.innerHTML = secoes[nome]();
@@ -371,7 +458,6 @@
     });
     conteudo.addEventListener("click", (e) => {
       if (e.target.closest("[data-recarregar]")) { e.preventDefault(); abrir(); }
-      if (e.target.closest("[data-salvar]")) { e.preventDefault(); LV.toast("Os dados de saque ainda são combinados com a equipe do site."); }
       const c = e.target.closest("[data-copiar]");
       if (c) { navigator.clipboard?.writeText(document.getElementById(c.dataset.copiar).value); LV.toast("Copiado!"); }
       if (e.target.id === "mostrar") {

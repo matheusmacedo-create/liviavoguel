@@ -81,3 +81,28 @@ CREATE TABLE IF NOT EXISTS lv_chat_bloqueios (
   criado_em DATETIME NOT NULL,
   PRIMARY KEY (slug, usuario_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Saques da modelo. A chave Pix fica em lv_modelos_pix (só a própria modelo vê). Cada pedido guarda os
+-- créditos sacados e o valor em centavos do momento do pedido. A equipe paga por fora e marca no phpMyAdmin:
+--   UPDATE lv_saques SET status = 'pago', pago_em = UTC_TIMESTAMP() WHERE id = <id>;
+--   UPDATE lv_saques SET status = 'recusado', observacao = '<motivo>' WHERE id = <id>;   -- os créditos voltam a ficar disponíveis
+CREATE TABLE IF NOT EXISTS lv_modelos_pix (
+  slug VARCHAR(40) NOT NULL PRIMARY KEY,
+  tipo VARCHAR(10) NOT NULL,                 -- cpf | email | celular | aleatoria
+  chave VARCHAR(80) NOT NULL,
+  atualizado_em DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS lv_saques (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  slug VARCHAR(40) NOT NULL,
+  creditos INT UNSIGNED NOT NULL,
+  valor_centavos INT UNSIGNED NOT NULL,
+  tipo_chave VARCHAR(10) NOT NULL,
+  chave VARCHAR(80) NOT NULL,
+  status VARCHAR(10) NOT NULL,               -- pendente | pago | recusado
+  observacao VARCHAR(190) NULL,
+  pedido_em DATETIME NOT NULL,
+  pago_em DATETIME NULL,
+  KEY ix_saques_modelo (slug, pedido_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

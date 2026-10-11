@@ -57,7 +57,7 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
 3. **Chat em tempo real:** feito, com moderação pela modelo (veja "Chat das salas" no fim).
 4. **Status online automático:** hoje o campo `online` é manual.
-5. **Painel da modelo:** login, ganhos, botão "ao vivo", perfil e "Configurar sala" já vêm do servidor; faltam saques e fotos.
+5. **Painel da modelo:** login, ganhos, saques, botão "ao vivo", perfil e "Configurar sala" já vêm do servidor; falta o envio de fotos.
 
 Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
 
@@ -186,6 +186,19 @@ e a senha. O slug precisa existir em `api/lib/modelos.php`.
   (a sessão aberta dela cai na hora).
 - **Esqueceu a senha:** rode o script de novo com uma senha nova e passe para ela.
 - O acesso vence sozinho em 12 horas. Depois de 5 senhas erradas em 15 minutos, o login espera.
+
+**Saques:** na seção Ganhos, a modelo cadastra a chave Pix (CPF, e-mail, celular ou aleatória, conferida no servidor)
+e pede o saque de tudo o que está disponível (`api/modelo-saque.php`). Disponível = créditos recebidos menos os já
+pedidos (pendentes ou pagos), em reais pelo repasse atual; mínimo de R$ 50,00 (`MODELO_SAQUE_MINIMO_CENTAVOS` no
+`config.php`) e um pedido pendente por vez. A equipe faz o Pix e marca no phpMyAdmin:
+
+```sql
+UPDATE lv_saques SET status = 'pago', pago_em = UTC_TIMESTAMP() WHERE id = 123;
+UPDATE lv_saques SET status = 'recusado', observacao = 'Chave errada' WHERE id = 123;  -- os créditos voltam ao disponível
+```
+
+Para ver os pedidos pendentes: `SELECT * FROM lv_saques WHERE status = 'pendente';`. A chave Pix nunca aparece fora do
+painel da própria modelo.
 
 **Ganhos:** o painel soma as gorjetas e os minutos de privado que a modelo recebeu (registrados em `lv_extrato`
 pelo `api/gastar.php`) e mostra hoje, este mês, total e o extrato por período, no horário de Brasília. Cada crédito
