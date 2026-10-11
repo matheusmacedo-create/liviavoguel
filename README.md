@@ -14,6 +14,7 @@ Site de transmissão ao vivo, pensado para **começar com 1 modelo** e crescer d
 | `entrar.html`, `cadastro.html`, `recuperar-senha.html` | Login, cadastro (checa 18+ pela data de nascimento) e recuperação de senha. |
 | `conta.html` | Minha conta: saldo, extrato de créditos, modelos seguidas e meus dados. |
 | `modelo-entrar.html`, `painel-modelo.html` | Área da modelo, com login próprio: ficar ao vivo, como transmitir pelo OBS, ganhos, perfil, configurações da sala, trocar senha e sair. |
+| `equipe-entrar.html`, `equipe.html` | Painel da equipe (sem link no site): pagar ou recusar saques e bloquear ou reativar modelos. |
 | `termos.html`, `404.html` | Termos/privacidade (revisar com advogado) e página de erro. |
 
 Todas as páginas mostram o aviso de **18+** na primeira visita.
@@ -198,7 +199,8 @@ UPDATE lv_saques SET status = 'recusado', observacao = 'Chave errada' WHERE id =
 ```
 
 Para ver os pedidos pendentes: `SELECT * FROM lv_saques WHERE status = 'pendente';`. A chave Pix nunca aparece fora do
-painel da própria modelo.
+painel da própria modelo e do painel da equipe. O jeito normal de pagar é pelo **painel da equipe** (abaixo); o SQL fica
+como plano B.
 
 **Ganhos:** o painel soma as gorjetas e os minutos de privado que a modelo recebeu (registrados em `lv_extrato`
 pelo `api/gastar.php`) e mostra hoje, este mês, total e o extrato por período, no horário de Brasília. Cada crédito
@@ -252,3 +254,22 @@ as mesmas mensagens, buscadas a cada 3 segundos enquanto a aba está visível (`
 Todo endpoint novo da área da modelo (ganhos, perfil, status) deve começar com `lv_exigir_modelo()`.
 
 Testes: `php scripts/testar_area_modelo.php` (sem MySQL nem internet).
+
+## Painel da equipe
+
+`/equipe.html` (sem link no site, `noindex`) é o painel de quem administra. Login próprio (`/equipe-entrar.html`),
+separado do de cliente e do de modelo, com sessão de no máximo 8 horas e espera depois de 5 senhas erradas.
+
+- **Saques para pagar:** valor, modelo e chave Pix (com botão de copiar). A equipe faz o Pix pelo banco e clica em
+  **Marcar como pago** (pode anotar o ID do Pix); ou **Recusar**, com o motivo, que a modelo vê no painel dela. Os
+  créditos de um saque recusado voltam ao disponível. Cada saque só sai de "pendente" uma vez.
+- **Modelos:** situação (ativa, ao vivo ou bloqueada), valor disponível e último login. **Bloquear** derruba a sessão
+  dela na hora, desliga a sala e impede o login, sem apagar nada; **Reativar** devolve o acesso.
+- Toda ação fica registrada em `lv_eventos` (tipo `equipe_acao`).
+
+**Criar uma conta da equipe** (no seu computador): `php scripts/criar_conta_equipe.php voce@exemplo.com.br`. A senha
+precisa de 12 caracteres ou mais; o script imprime o `INSERT` para colar no phpMyAdmin. Para tirar o acesso de alguém:
+`UPDATE lv_equipe_contas SET ativa = 0 WHERE email = '...';`. Tabela `lv_equipe_contas` em `api/schema-modelos.sql`.
+
+Endpoints: `api/equipe-entrar.php`, `api/equipe-eu.php`, `api/equipe-sair.php` e `api/equipe.php`.
+

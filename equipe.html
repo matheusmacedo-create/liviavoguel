@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel da equipe</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body data-sem-aviso="1">
+  <main class="container secao" id="painel" hidden>
+    <div class="painel-topo" style="margin-bottom:18px">
+      <h1>Painel da equipe</h1>
+      <div style="display:flex;gap:10px;align-items:center"><small style="color:var(--texto-2)" id="quem"></small>
+        <button class="btn btn-pequeno" id="sair">Sair</button></div>
+    </div>
+    <div class="cards-numeros" id="resumo"></div>
+    <div class="painel"><div class="painel-topo"><h2>Saques para pagar</h2><small style="color:var(--texto-2)">Atualiza a cada 30 s</small></div><div id="pendentes"></div></div>
+    <div class="painel"><h2>Modelos</h2><div id="modelos"></div></div>
+    <div class="painel"><h2>Saques resolvidos</h2><div id="resolvidos"></div></div>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    /*
+     * PAINEL DA EQUIPE (api/equipe.php)
+     * Login próprio (equipe-entrar.html), separado do de cliente e do de modelo.
+     * Saque: a equipe faz o Pix pelo banco e depois marca aqui como pago; recusado devolve os créditos à modelo.
+     */
+    LV.montar("");
+    const { esc } = LV;
+    const $ = (id) => document.getElementById(id);
+    const dinheiro = (c) => LV.reais(c / 100);
+    const hora = (iso) => iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }) : "—";
+    const TIPOS_PIX = { cpf: "CPF", email: "E-mail", celular: "Celular", aleatoria: "Aleatória" };
+    let dados = null;
+
+    function desenhar() {
+      const p = dados.saques.pendentes;
+      const totalPendente = p.reduce((t, s) => t + s.centavos, 0);
+      $("resumo").innerHTML = `
+        <div class="numero destaque"><small>Saques para pagar</small><strong>${p.length}</strong></div>
+        <div class="numero"><small>Valor a pagar</small><strong>${dinheiro(totalPendente)}</strong></div>
+        <div class="numero"><small>Modelos ao vivo agora</small><strong>${dados.modelos.filter((m) => m.online).length}</strong></div>`;
+      $("pendentes").innerHTML = p.length ? `<div class="tabela-rolagem"><table class="tabela">
+        <thead><tr><th>Pedido em</th><th>Modelo</th><th style="text-align:right">Valor</th><th>Chave Pix</th><th></th></tr></thead>
+        <tbody>${p.map((s) => `<tr>
+          <td style="white-space:nowrap">${hora(s.pedido_em)}</td><td>${esc(s.nome)}</td>
+          <td style="text-align:right;white-space:nowrap"><strong>${dinheiro(s.centavos)}</strong></td>
+          <td>${esc(TIPOS_PIX[s.pix.tipo] || s.pix.tipo)}: <code>${esc(s.pix.chave)}</code>
+            <button class="btn btn-pequeno" data-copiar="${esc(s.pix.chave)}">Copiar</button></td>
+          <td style="text-align:right;white-space:nowrap">
+            <button class="btn btn-pequeno btn-primario" data-pago="${s.id}">Marcar como pago</button>
+            <button class="btn btn-pequeno perigo" data-recusar="${s.id}">Recusar</button></td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="vazio"><div class="icone">✓</div>Nenhum saque esperando pagamento.</div>`;
+      $("modelos").innerHTML = dados.modelos.length ? `<div class="tabela-rolagem"><table class="tabela">
+        <thead><tr><th>Modelo</th><th class="col-opcional">E-mail</th><th>Situação</th><th style="text-align:right">Disponível</th><th class="col-opcional">Último login</th><th></th></tr></thead>
+        <tbody>${dados.modelos.map((m) => `<tr>
+          <td>${esc(m.nome)}</td><td class="col-opcional">${esc(m.email)}</td>
+          <td>${!m.ativa ? `<span style="color:#ff7a90;font-weight:600">Bloqueada</span>` : m.online ? `<span class="badge-online">Ao vivo</span>` : `<span style="color:var(--texto-2)">Ativa</span>`}</td>
+          <td style="text-align:right;white-space:nowrap">${dinheiro(m.disponivel.centavos)}</td>
+          <td class="col-opcional">${hora(m.ultimo_login)}</td>
+          <td style="text-align:right">${m.ativa
+            ? `<button class="btn btn-pequeno perigo" data-bloquear="${m.id}" data-nome="${esc(m.nome)}">Bloquear</button>`
+            : `<button class="btn btn-pequeno" data-reativar="${m.id}">Reativar</button>`}</td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="vazio">Nenhuma conta de modelo. Crie com <code>php scripts/criar_conta_modelo.php</code>.</div>`;
+      const r = dados.saques.resolvidos;
+      $("resolvidos").innerHTML = r.length ? `<div class="tabela-rolagem"><table class="tabela">
+        <thead><tr><th>Pedido em</th><th>Modelo</th><th style="text-align:right">Valor</th><th>Situação</th><th class="col-opcional">Observação</th></tr></thead>
+        <tbody>${r.map((s) => `<tr>
+          <td style="white-space:nowrap">${hora(s.pedido_em)}</td><td>${esc(s.nome)}</td>
+          <td style="text-align:right;white-space:nowrap">${dinheiro(s.centavos)}</td>
+          <td>${s.status === "pago" ? `<span style="color:var(--verde);font-weight:600">✓ Pago</span><br><small style="color:var(--texto-2)">${hora(s.pago_em)}</small>` : `<span style="color:#ff7a90;font-weight:600">✕ Recusado</span>`}</td>
+          <td class="col-opcional">${esc(s.observacao || "")}</td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="vazio">Nenhum saque resolvido ainda.</div>`;
+    }
+
+    async function carregar() {
+      try {
+        dados = await LV.api("equipe.php");
+        desenhar();
+      } catch (err) {
+        if (err.status === 401) location.replace("equipe-entrar.html");
+      }
+    }
+    async function agir(corpo, ok) {
+      try {
+        dados = await LV.api("equipe.php", corpo);
+        desenhar();
+        LV.toast(ok);
+      } catch (err) {
+        if (err.status === 401) return location.replace("equipe-entrar.html");
+        LV.toast(err.message);
+        carregar();
+      }
+    }
+
+    document.addEventListener("click", (e) => {
+      const copiar = e.target.closest("[data-copiar]");
+      if (copiar) { navigator.clipboard?.writeText(copiar.dataset.copiar); LV.toast("Chave Pix copiada."); }
+      const pago = e.target.closest("[data-pago]");
+      if (pago) {
+        const s = dados.saques.pendentes.find((x) => x.id === Number(pago.dataset.pago));
+        const md = LV.modal(`
+          <div class="modal-icone" style="color:var(--verde)">✓</div>
+          <h2>Marcar ${dinheiro(s.centavos)} como pago?</h2>
+          <p>Só marque depois de fazer o Pix para <strong>${esc(s.nome)}</strong> na chave <code>${esc(s.pix.chave)}</code>. A modelo vê como pago.</p>
+          <div class="campo"><label for="obs-pago">Observação (opcional, ex.: ID do Pix)</label><input id="obs-pago" maxlength="190"></div>
+          <div class="acoes"><button class="btn btn-primario btn-bloco" id="confirmar">Já fiz o Pix — marcar como pago</button>
+            <button class="btn btn-bloco" data-fechar>Cancelar</button></div>`, { largo: true });
+        md.querySelector("#confirmar").addEventListener("click", () => {
+          const obs = md.querySelector("#obs-pago").value;
+          md.fechar();
+          agir({ acao: "saque_pago", id: s.id, observacao: obs }, "Saque marcado como pago.");
+        });
+      }
+      const recusar = e.target.closest("[data-recusar]");
+      if (recusar) {
+        const s = dados.saques.pendentes.find((x) => x.id === Number(recusar.dataset.recusar));
+        const md = LV.modal(`
+          <div class="modal-icone" style="color:#ff7a90">✕</div>
+          <h2>Recusar o saque de ${esc(s.nome)}?</h2>
+          <p>Os créditos voltam ao disponível dela. Diga o motivo: ela vê no painel.</p>
+          <div class="campo"><label for="obs-recusa">Motivo</label><input id="obs-recusa" maxlength="190" placeholder="ex.: a chave Pix não confere"></div>
+          <div class="acoes"><button class="btn btn-bloco perigo" id="confirmar">Recusar saque</button>
+            <button class="btn btn-bloco" data-fechar>Cancelar</button></div>`, { largo: true });
+        md.querySelector("#confirmar").addEventListener("click", () => {
+          const obs = md.querySelector("#obs-recusa").value.trim();
+          if (!obs) return LV.toast("Diga o motivo da recusa.");
+          md.fechar();
+          agir({ acao: "saque_recusado", id: s.id, observacao: obs }, "Saque recusado.");
+        });
+      }
+      const bloquear = e.target.closest("[data-bloquear]");
+      if (bloquear) {
+        const md = LV.modal(`
+          <div class="modal-icone" style="color:#ff7a90">⛔</div>
+          <h2>Bloquear ${esc(bloquear.dataset.nome)}?</h2>
+          <p>Ela sai do painel na hora, a sala é desligada e ela não consegue entrar até ser reativada. Nada é apagado.</p>
+          <div class="acoes"><button class="btn btn-bloco perigo" id="confirmar">Bloquear</button>
+            <button class="btn btn-bloco" data-fechar>Cancelar</button></div>`);
+        md.querySelector("#confirmar").addEventListener("click", () => { md.fechar(); agir({ acao: "modelo_bloquear", id: Number(bloquear.dataset.bloquear) }, "Modelo bloqueada."); });
+      }
+      const reativar = e.target.closest("[data-reativar]");
+      if (reativar) agir({ acao: "modelo_reativar", id: Number(reativar.dataset.reativar) }, "Modelo reativada.");
+    });
+    $("sair").addEventListener("click", async () => {
+      await fetch("api/equipe-sair.php", { method: "POST", credentials: "same-origin" }).catch(() => {});
+      location.replace("equipe-entrar.html");
+    });
+
+    (async () => {
+      if (window.SITE.modoDemo) return location.replace("equipe-entrar.html");
+      let eu = null;
+      try { eu = await LV.api("equipe-eu.php"); } catch {}
+      if (!eu || !eu.logado) return location.replace("equipe-entrar.html");
+      $("quem").textContent = eu.equipe.email;
+      $("painel").hidden = false;
+      await carregar();
+      setInterval(() => { if (!document.hidden) carregar(); }, 30000);
+    })();
+  </script>
+</body>
+</html>

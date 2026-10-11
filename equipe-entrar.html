@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Equipe — Entrar</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body data-sem-aviso="1">
+  <main class="auth-form" style="min-height:calc(100vh - 160px)">
+    <form class="auth-card" id="form" novalidate>
+      <h1>Painel da equipe</h1>
+      <p>Acesso restrito. Saques e contas das modelos.</p>
+      <div class="campo"><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" required></div>
+      <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" required></div>
+      <button class="btn btn-primario btn-bloco" id="entrar">Entrar</button>
+    </form>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    LV.montar("");
+    const $ = (id) => document.getElementById(id);
+    if (window.SITE.modoDemo) {
+      $("form").insertAdjacentHTML("beforeend", `<p class="ajuda" style="color:var(--texto-2);margin-top:14px">O painel da equipe só funciona com o servidor no ar (modo demonstração ligado).</p>`);
+    } else {
+      LV.api("equipe-eu.php").then((r) => { if (r.logado) location.replace("equipe.html"); }).catch(() => {});
+    }
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (window.SITE.modoDemo) return LV.toast("Disponível quando o servidor estiver no ar.");
+      $("entrar").disabled = true;
+      try {
+        await LV.api("equipe-entrar.php", { email: $("email").value.trim(), senha: $("senha").value });
+        location.replace("equipe.html");
+      } catch (err) {
+        $("senha").value = "";
+        $("entrar").disabled = false;
+        LV.toast(err.message);
+      }
+    });
+  </script>
+</body>
+</html>
