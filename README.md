@@ -30,7 +30,7 @@ Para ver o visual sem servidor (por exemplo abrindo os arquivos direto ou num `n
 para testar o fluxo inteiro: criar conta → comprar créditos → "Simular pagamento aprovado" → gorjeta → privado →
 extrato. Com o site no ar e vendendo de verdade, o `modoDemo` tem que ser `false`.
 
-> A área da modelo tem login próprio e mostra os ganhos reais (veja "Área da modelo" no fim). Status ao vivo e edição do perfil ainda são só visuais.
+> A área da modelo tem login próprio e mostra os ganhos reais (veja "Área da modelo" no fim). O botão "ao vivo" do painel também vem do servidor; a edição do perfil ainda é só visual.
 
 ## Como trocar os dados da modelo
 
@@ -57,7 +57,7 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
 3. **Chat em tempo real:** hoje as mensagens ficam só no navegador de quem escreve.
 4. **Status online automático:** hoje o campo `online` é manual.
-5. **Painel da modelo:** login e ganhos já vêm do servidor; faltam saques, editar perfil e abrir ou fechar a sala pelo servidor.
+5. **Painel da modelo:** login, ganhos e o botão "ao vivo" já vêm do servidor; faltam saques e editar perfil.
 
 Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
 
@@ -185,8 +185,14 @@ pelo `api/gastar.php`) e mostra hoje, este mês, total e o extrato por período,
 vale para a modelo o repasse de `MODELO_REPASSE_CENTAVOS` no `config.php` (padrão: 20 = R$ 0,20). Quem mandou
 aparece só pelo apelido, nunca pelo e-mail. Saques ainda são combinados por fora.
 
-Endpoints: `api/modelo-entrar.php`, `api/modelo-eu.php`, `api/modelo-sair.php`, `api/modelo-senha.php` e
-`api/modelo-ganhos.php`.
+**Ao vivo:** o botão do painel liga e desliga a sala no servidor (`api/modelo-ao-vivo.php`), e a página inicial e a
+sala leem o status em `api/ao-vivo.php` (a cada minuto). O campo `online` de `assets/js/modelos.js` só vale no modo
+demonstração. Com a sala ligada, o painel avisa o servidor a cada minuto; se a modelo fechar o painel sem desligar,
+o site a mostra offline sozinho em 5 minutos, para ninguém pagar por uma sala vazia. Sair do painel desliga a sala.
+A tabela fica em `api/schema-modelos.sql` (importar de novo é seguro: só cria o que falta).
+
+Endpoints: `api/modelo-entrar.php`, `api/modelo-eu.php`, `api/modelo-sair.php`, `api/modelo-senha.php`,
+`api/modelo-ganhos.php`, `api/modelo-ao-vivo.php` e o público `api/ao-vivo.php`.
 Todo endpoint novo da área da modelo (ganhos, perfil, status) deve começar com `lv_exigir_modelo()`.
 
 Testes: `php scripts/testar_area_modelo.php` (sem MySQL nem internet).

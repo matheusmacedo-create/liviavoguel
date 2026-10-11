@@ -39,7 +39,36 @@
     let conta = null; // { slug, nome, email } da modelo logada
     let m = null;     // dados públicos dela, de modelos.js
     const conteudo = document.getElementById("conteudo");
-    const online = () => LV.ler("lv_painel_online", m.online ? "1" : "0") === "1";
+    // ---------- Ao vivo (api/modelo-ao-vivo.php) ----------
+    // Ligado, o painel avisa o servidor a cada minuto que continua aberto. Se a modelo fechar
+    // o painel sem desligar, o site a mostra offline sozinho em 5 minutos (LV_AO_VIVO_VALIDADE).
+    let aoVivo = false;
+    let avisos = null;
+    const online = () => aoVivo;
+
+    async function carregarAoVivo() {
+      if (S.modoDemo) return (aoVivo = LV.ler("lv_painel_online", m.online ? "1" : "0") === "1");
+      try {
+        const r = await fetch("api/ao-vivo.php", { credentials: "same-origin" }).then((x) => x.json());
+        aoVivo = !!(r.modelos && r.modelos[m.slug] && r.modelos[m.slug].online);
+      } catch { aoVivo = false; }
+      return aoVivo;
+    }
+
+    async function definirAoVivo(ligar) {
+      if (S.modoDemo) LV.gravar("lv_painel_online", ligar ? "1" : "0");
+      else aoVivo = (await LV.api("modelo-ao-vivo.php", { online: ligar })).online;
+      if (S.modoDemo) aoVivo = ligar;
+      clearInterval(avisos);
+      if (aoVivo && !S.modoDemo) {
+        avisos = setInterval(() => {
+          LV.api("modelo-ao-vivo.php", { online: true }).catch((err) => {
+            if (err.status === 401) location.replace("modelo-entrar.html");
+          });
+        }, 60000);
+      }
+      return aoVivo;
+    }
 
     // ---------- Ganhos (api/modelo-ganhos.php) ----------
     // O servidor soma as gorjetas e os minutos de privado que a modelo recebeu e converte
@@ -106,6 +135,9 @@
         <div class="painel-topo">
           <h1>Olá, ${esc(m.nome.split(" ")[0])} 👋</h1>
           <label class="chave"><input type="checkbox" id="status" ${online() ? "checked" : ""}><span class="trilho"></span><span id="status-txt">${online() ? "Ao vivo" : "Offline"}</span></label>
+        </div>
+        <div class="ajuda" id="status-ajuda" style="color:var(--texto-2);font-size:.85rem;margin:-6px 0 16px">
+          ${online() ? "Sua sala aparece como ao vivo no site. Deixe esta página aberta enquanto estiver transmitindo." : "Ligue quando começar a transmitir. Sua sala passa a aparecer como ao vivo no site."}
         </div>
         ${ganhos ? `
         <div class="cards-numeros">
@@ -254,12 +286,24 @@
         e.target.textContent = k.type === "password" ? "Mostrar" : "Ocultar";
       }
     });
-    conteudo.addEventListener("change", (e) => {
-      if (e.target.id === "status") {
-        LV.gravar("lv_painel_online", e.target.checked ? "1" : "0");
-        document.getElementById("status-txt").textContent = e.target.checked ? "Ao vivo" : "Offline";
-        LV.toast(e.target.checked ? "Você está ao vivo!" : "Sala fechada.");
+    conteudo.addEventListener("change", async (e) => {
+      if (e.target.id !== "status") return;
+      const chave = e.target;
+      const ligar = chave.checked;
+      chave.disabled = true;
+      try {
+        await definirAoVivo(ligar);
+        LV.toast(aoVivo ? "Você está ao vivo!" : "Sala fechada.");
+      } catch (err) {
+        if (err.status === 401) return location.replace("modelo-entrar.html");
+        LV.toast(err.message);
       }
+      chave.disabled = false;
+      chave.checked = aoVivo;
+      document.getElementById("status-txt").textContent = aoVivo ? "Ao vivo" : "Offline";
+      document.getElementById("status-ajuda").textContent = aoVivo
+        ? "Sua sala aparece como ao vivo no site. Deixe esta página aberta enquanto estiver transmitindo."
+        : "Ligue quando começar a transmitir. Sua sala passa a aparecer como ao vivo no site.";
     });
     conteudo.addEventListener("submit", async (e) => {
       if (e.target.id !== "form-senha") return;
@@ -279,6 +323,7 @@
     });
     conteudo.addEventListener("click", async (e) => {
       if (e.target.id !== "sair-modelo") return;
+      if (aoVivo) await definirAoVivo(false).catch(() => {}); // quem sai fecha a sala
       if (S.modoDemo) LV.gravar("lv_modelo_demo", "");
       else await LV.api("modelo-sair.php", {}).catch(() => {});
       location.replace("modelo-entrar.html");
@@ -293,6 +338,9 @@
       }
       m = conta && window.MODELOS.find((x) => x.slug === conta.slug);
       if (!m) return location.replace("modelo-entrar.html");
+      await carregarAoVivo();
+      // Painel reaberto com a sala ligada: volta a avisar o servidor que continua aberto.
+      if (aoVivo && !S.modoDemo) await definirAoVivo(true).catch(() => {});
       document.getElementById("painel").hidden = false;
       window.addEventListener("hashchange", abrir);
       abrir();

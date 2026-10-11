@@ -293,6 +293,53 @@ file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.co
 [$s] = chamar('modelo-ganhos.php', 'POST', []);
 verificar('ganhos por POST: 405', $s, 405);
 
+// ============================================================================= ao vivo
+recomecar();
+criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$_GET = [];
+$aoVivo = static fn() => chamar('ao-vivo.php')[1]['modelos']['livia-voguel'];
+
+verificar('ao vivo: começa offline', $aoVivo(), ['online' => false, 'desde' => null]);
+verificar('ao vivo: lista só modelos de LV_MODELOS', array_keys(chamar('ao-vivo.php')[1]['modelos']), array_keys(LV_MODELOS));
+
+$_SESSION = ['usuario_id' => 7];
+[$s, $c] = chamar('modelo-ao-vivo.php', 'POST', ['online' => true]);
+verificar('cliente não liga a sala: 401', [$s, $c['login_modelo'] ?? null], [401, true]);
+verificar('cliente não liga a sala: continua offline', $aoVivo()['online'], false);
+
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s] = chamar('modelo-ao-vivo.php', 'POST', ['online' => 'sim']);
+verificar('online que não é true/false: 422', $s, 422);
+[$s] = chamar('modelo-ao-vivo.php', 'POST', ['online' => true], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('ligar vindo de outro site: 403', $s, 403);
+
+[$s, $c] = chamar('modelo-ao-vivo.php', 'POST', ['online' => true]);
+verificar('modelo liga a sala: 200 e online', [$s, $c['online']], [200, true]);
+verificar('ligar marca desde quando', is_string($c['desde']), true);
+verificar('público vê ao vivo', $aoVivo()['online'], true);
+
+lv_db()->exec("UPDATE lv_modelos_ao_vivo SET desde = '2026-01-01 10:00:00'");
+[, $c] = chamar('modelo-ao-vivo.php', 'POST', ['online' => true]);
+verificar('aviso do painel mantém o desde', $c['desde'], '2026-01-01T10:00:00Z');
+
+$velho = gmdate('Y-m-d H:i:s', time() - LV_AO_VIVO_VALIDADE - 5);
+lv_db()->exec("UPDATE lv_modelos_ao_vivo SET visto_em = '$velho'");
+verificar('sem aviso do painel por 5 min: offline', $aoVivo(), ['online' => false, 'desde' => null]);
+[, $c] = chamar('modelo-ao-vivo.php', 'POST', ['online' => true]);
+verificar('religar depois de vencer: online de novo, desde novo', [$c['online'], $c['desde'] !== '2026-01-01T10:00:00Z'], [true, true]);
+
+[$s, $c] = chamar('modelo-ao-vivo.php', 'POST', ['online' => false]);
+verificar('modelo desliga: offline', [$s, $c['online'], $c['desde']], [200, false, null]);
+verificar('público vê offline', $aoVivo()['online'], false);
+[$s, $c] = chamar('modelo-ao-vivo.php', 'POST', ['online' => false]);
+verificar('desligar duas vezes não quebra', [$s, $c['online']], [200, false]);
+verificar('uma linha por modelo', (int) lv_db()->query('SELECT COUNT(*) FROM lv_modelos_ao_vivo')->fetchColumn(), 1);
+verificar('ligar/desligar fica registrado', (int) lv_db()->query("SELECT COUNT(*) FROM lv_eventos WHERE tipo = 'ao_vivo'")->fetchColumn(), 3);
+
+[$s] = chamar('ao-vivo.php', 'POST', []);
+verificar('ao-vivo.php por POST: 405', $s, 405);
+
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
 $js = preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', (string) file_get_contents($raiz . '/assets/js/modelos.js'));
