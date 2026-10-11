@@ -65,7 +65,7 @@ Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou 
 
 - **Fase 1:** `docs/fase1-guia-obs-multistream.md`, o guia do OBS para transmitir em vários sites de cam juntos.
 - **Fase 2:** `painel-multicam/`, programa de computador com o chat de todos os sites numa tela só e o ranking de
-  R$/min. Não faz parte do site e não precisa ir para a hospedagem. Veja `painel-multicam/README.md`.
+  R$/min. Não faz parte do site: o `.htaccess` bloqueia essa pasta no servidor. Veja `painel-multicam/README.md`.
 
 ## Cuidados legais
 
@@ -117,7 +117,7 @@ Regras importantes:
 2. **Arquivos:** o site está publicado em `https://liviavoguel.nativon.com.br`, numa pasta só dele
    (`public_html/liviavoguel` do `nativon.com.br`). A Hostinger clona o branch `main` direto do GitHub nessa pasta:
    em **Avançado → Git**, use **Implantar** para puxar as novidades do `main`. O `.htaccess` da raiz bloqueia
-   `scripts/`, `docs/`, `.git` e o README no navegador.
+   `scripts/`, `docs/`, `painel-multicam/`, `.git` e o README no navegador.
 3. **PHP:** em **Avançado → Configuração do PHP**, escolha PHP 8.1 ou mais novo, com as extensões `curl` e `pdo_mysql`
    (já vêm ligadas por padrão).
 
