@@ -34,3 +34,19 @@ CREATE TABLE IF NOT EXISTS lv_modelos_perfil (
   idiomas TEXT NOT NULL,
   atualizado_em DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Configuração da sala, editada no painel ("Configurar sala"). Sem linha aqui, valem os padrões de
+-- api/lib/modelos.php (preço do privado) e nenhuma meta. A meta conta as gorjetas lançadas depois de
+-- meta_desde_id (o último id de lv_extrato quando a meta foi definida), e recomeça quando a modelo troca
+-- o título ou o valor. Pelo id, e não pelo horário, uma gorjeta do mesmo segundo nunca cai na meta errada.
+-- bloqueadas é uma lista em JSON.
+CREATE TABLE IF NOT EXISTS lv_modelos_sala (
+  slug VARCHAR(40) NOT NULL PRIMARY KEY,
+  preco_privado INT UNSIGNED NOT NULL,
+  meta_titulo VARCHAR(60) NULL,
+  meta_alvo INT UNSIGNED NULL,
+  meta_desde_id INT UNSIGNED NULL,
+  boas_vindas VARCHAR(120) NOT NULL,
+  bloqueadas TEXT NOT NULL,
+  atualizado_em DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

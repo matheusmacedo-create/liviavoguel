@@ -57,7 +57,7 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
 3. **Chat em tempo real:** hoje as mensagens ficam só no navegador de quem escreve.
 4. **Status online automático:** hoje o campo `online` é manual.
-5. **Painel da modelo:** login, ganhos, botão "ao vivo" e perfil já vêm do servidor; faltam saques, fotos e "Configurar sala".
+5. **Painel da modelo:** login, ganhos, botão "ao vivo", perfil e "Configurar sala" já vêm do servidor; faltam saques e fotos.
 
 Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
 
@@ -201,8 +201,16 @@ A tabela fica em `api/schema-modelos.sql` (importar de novo é seguro: só cria 
 (1 a 5). Salvo em `lv_modelos_perfil` (`api/modelo-perfil.php`), vale sobre `assets/js/modelos.js` na página inicial e
 na sala, que leem `api/perfis.php` por `assets/js/perfis.js`. Fotos ainda são trocadas em `assets/img/`.
 
+**Configurar sala:** a modelo define o preço do show privado (1 a 500 créditos por minuto), a meta de gorjetas
+(título e valor), a mensagem de boas-vindas do chat e até 30 palavras bloqueadas. Salvo em `lv_modelos_sala`
+(`api/modelo-sala.php`). O `api/gastar.php` cobra o privado por esse preço (sem configuração, vale o padrão de
+`api/lib/modelos.php`); o navegador nunca escolhe o preço. A meta conta as gorjetas lançadas depois de definida e
+recomeça do zero quando o título ou o valor muda. A sala lê tudo em `api/salas.php` por `assets/js/salas.js`, e o chat
+recusa mensagens e recados com palavra bloqueada (sem diferenciar maiúsculas nem acentos).
+
 Endpoints: `api/modelo-entrar.php`, `api/modelo-eu.php`, `api/modelo-sair.php`, `api/modelo-senha.php`,
-`api/modelo-ganhos.php`, `api/modelo-ao-vivo.php`, `api/modelo-perfil.php` e os públicos `api/ao-vivo.php` e `api/perfis.php`.
+`api/modelo-ganhos.php`, `api/modelo-ao-vivo.php`, `api/modelo-perfil.php`, `api/modelo-sala.php` e os públicos
+`api/ao-vivo.php`, `api/perfis.php` e `api/salas.php`.
 Todo endpoint novo da área da modelo (ganhos, perfil, status) deve começar com `lv_exigir_modelo()`.
 
 Testes: `php scripts/testar_area_modelo.php` (sem MySQL nem internet).

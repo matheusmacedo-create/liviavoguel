@@ -398,6 +398,75 @@ verificar('perfis.php por POST: 405', $s, 405);
 lv_db()->exec("INSERT INTO lv_modelos_perfil (slug, nome, cidade, bio, tags, idiomas, atualizado_em) VALUES ('removida', 'X', '', '', '[]', '[]', '2026-01-01 00:00:00')");
 verificar('perfil de modelo fora de LV_MODELOS não aparece', array_keys(chamar('perfis.php')[1]['modelos']), ['livia-voguel']);
 
+// ============================================================================= configurar sala
+recomecar();
+criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$_GET = [];
+$salaPub = static fn() => chamar('salas.php')[1]['modelos']['livia-voguel'];
+$padrao = LV_MODELOS['livia-voguel']['preco_privado'];
+verificar('sala sem configuração: preço padrão e sem meta', [$salaPub()['preco_privado'], $salaPub()['meta'], $salaPub()['salva']], [$padrao, null, false]);
+verificar('preço do privado sem configuração = padrão', lv_preco_privado('livia-voguel'), $padrao);
+
+$salaOk = ['preco_privado' => 35, 'meta_titulo' => 'Dança especial', 'meta_alvo' => 300, 'boas_vindas' => 'Oi, amor! 💜', 'bloqueadas' => ['WhatsApp', 'whatsapp', 'telefone']];
+$_SESSION = ['usuario_id' => 7];
+[$s] = chamar('modelo-sala.php', 'POST', $salaOk);
+verificar('cliente não configura a sala: 401', $s, 401);
+
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s, $c] = chamar('modelo-sala.php', 'POST', $salaOk);
+verificar('salvar sala: 200', $s, 200);
+verificar('salvar sala: devolve a configuração', [$c['sala']['preco_privado'], $c['sala']['meta'], $c['sala']['boas_vindas']],
+    [35, ['titulo' => 'Dança especial', 'alvo' => 300, 'atual' => 0], 'Oi, amor! 💜']);
+verificar('palavras bloqueadas em minúsculas e sem repetidas', $c['sala']['bloqueadas'], ['whatsapp', 'telefone']);
+verificar('público vê a sala salva', $salaPub()['preco_privado'], 35);
+
+// A cobrança do privado passa a usar o preço novo (o navegador não escolhe).
+$pdo = lv_db();
+$pdo->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES ('fa@exemplo.com.br', 'fa_1', 'x', '2026-01-01 00:00:00')");
+$fa = (int) $pdo->lastInsertId();
+lv_lancar($fa, 500, 'compra', null, 'Pacote de 500 créditos');
+$sessaoModelo = $_SESSION;
+$_SESSION = ['usuario_id' => $fa];
+[$s, $c] = chamar('gastar.php', 'POST', ['tipo' => 'privado', 'modelo' => 'livia-voguel', 'creditos' => 1]);
+verificar('privado cobra o preço que a modelo definiu', [$s, $c['creditos'], $c['saldo']], [200, 35, 465]);
+
+// Meta conta só as gorjetas depois que ela foi definida.
+[, $c] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 40]);
+verificar('gorjeta entra na meta', $salaPub()['meta']['atual'], 40);
+verificar('privado não entra na meta', $salaPub()['meta']['atual'], 40);
+$_SESSION = $sessaoModelo;
+[, $c] = chamar('modelo-sala.php', 'POST', ['preco_privado' => 30, 'boas_vindas' => 'Oi!'] + $salaOk);
+verificar('mudar só o preço mantém a meta e o progresso', [$c['sala']['preco_privado'], $c['sala']['meta']['atual']], [30, 40]);
+[, $c] = chamar('modelo-sala.php', 'POST', ['meta_alvo' => 500] + $salaOk);
+verificar('trocar o valor da meta recomeça do zero', $c['sala']['meta'], ['titulo' => 'Dança especial', 'alvo' => 500, 'atual' => 0]);
+[, $c] = chamar('modelo-sala.php', 'POST', ['meta_titulo' => '', 'meta_alvo' => null] + $salaOk);
+verificar('título e valor vazios = sem meta', $c['sala']['meta'], null);
+verificar('uma linha por modelo', (int) $pdo->query('SELECT COUNT(*) FROM lv_modelos_sala')->fetchColumn(), 1);
+
+$errosSala = [
+    'preço zero' => [['preco_privado' => 0], 'preco_privado'],
+    'preço acima do teto' => [['preco_privado' => 501], 'preco_privado'],
+    'preço em texto' => [['preco_privado' => '20'], 'preco_privado'],
+    'preço quebrado' => [['preco_privado' => 20.5], 'preco_privado'],
+    'meta sem título' => [['meta_titulo' => ''], 'meta_titulo'],
+    'meta sem valor' => [['meta_alvo' => null], 'meta_alvo'],
+    'meta zero' => [['meta_alvo' => 0], 'meta_alvo'],
+    'título da meta longo' => [['meta_titulo' => str_repeat('a', 61)], 'meta_titulo'],
+    'boas-vindas longa' => [['boas_vindas' => str_repeat('a', 121)], 'boas_vindas'],
+    '31 palavras bloqueadas' => [['bloqueadas' => array_map(static fn($i) => "p$i", range(1, 31))], 'bloqueadas'],
+    'palavras fora de lista' => [['bloqueadas' => 'whatsapp'], 'bloqueadas'],
+];
+foreach ($errosSala as $nome => [$troca, $campo]) {
+    [$s, $c] = chamar('modelo-sala.php', 'POST', $troca + $salaOk);
+    verificar("sala inválida ($nome): 422 no campo $campo", [$s, $c['campo'] ?? null], [422, $campo]);
+}
+verificar('sala inválida não muda o preço salvo', lv_preco_privado('livia-voguel'), 35);
+[$s] = chamar('modelo-sala.php', 'POST', $salaOk, ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('configurar sala vindo de outro site: 403', $s, 403);
+[$s] = chamar('salas.php', 'POST', []);
+verificar('salas.php por POST: 405', $s, 405);
+
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
 $js = preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', (string) file_get_contents($raiz . '/assets/js/modelos.js'));
