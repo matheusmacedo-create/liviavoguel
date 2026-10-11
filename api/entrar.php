@@ -1,5 +1,5 @@
 <?php
-/** POST { email, senha } → entra (sessão PHP). Depois de 10 erros em 15 min para o mesmo e-mail ou IP, espera. */
+/** POST { email, senha } → entra (sessão PHP) e devolve o estado da conta (o mesmo de eu.php). Depois de 10 erros em 15 min para o mesmo e-mail ou IP, espera. */
 declare(strict_types=1);
 require_once __DIR__ . '/lib/base.php';
 
@@ -22,4 +22,4 @@ if (password_needs_rehash((string) $u['senha_hash'], PASSWORD_DEFAULT)) {
     lv_db()->prepare('UPDATE lv_usuarios SET senha_hash = ? WHERE id = ?')->execute([password_hash($senha, PASSWORD_DEFAULT), $u['id']]);
 }
 lv_logar((int) $u['id']);
-lv_json(['ok' => true, 'email' => $email, 'saldo' => lv_saldo((int) $u['id'])]);
+lv_json(lv_estado((int) $u['id']) + ['email' => $email]);

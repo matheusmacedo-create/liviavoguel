@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS lv_usuarios (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   email VARCHAR(190) NOT NULL,
+  apelido VARCHAR(20) NOT NULL,
   senha_hash VARCHAR(255) NOT NULL,
   criado_em DATETIME NOT NULL,
   UNIQUE KEY uq_usuarios_email (email)
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS lv_extrato (
   creditos INT NOT NULL,
   motivo VARCHAR(20) NOT NULL,                -- compra | estorno | gorjeta | privado
   pedido_id INT UNSIGNED NULL,
+  modelo VARCHAR(40) NULL,                    -- slug da modelo (gorjeta e privado)
   descricao VARCHAR(190) NULL,
   criado_em DATETIME NOT NULL,
   UNIQUE KEY uq_extrato_pedido (pedido_id, motivo),

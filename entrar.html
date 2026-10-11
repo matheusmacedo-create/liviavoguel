@@ -59,12 +59,10 @@
         LV.toast("Confira o e-mail e a senha (mínimo 6 caracteres).");
         return;
       }
-      if (window.SITE.modoDemo) {
-        const salvo = LV.usuario();
-        LV.entrar({ apelido: salvo?.email === email ? salvo.apelido : email.split("@")[0], email });
-        location.href = destino;
-      }
-      // Fora do modo demonstração: POST api/entrar.php (feito na integração).
+      // LV.login: no modo demonstração simula; fora dele, POST api/entrar.php.
+      LV.login(email, senha)
+        .then(() => (location.href = destino))
+        .catch((err) => LV.toast(err.message));
     });
   </script>
 </body>

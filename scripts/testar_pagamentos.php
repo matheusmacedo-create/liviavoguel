@@ -311,6 +311,48 @@ verificar('gorjeta debita', lv_debitar($ana, 25, 'gorjeta', 'Gorjeta para Livia'
 verificar('sem saldo não debita', lv_debitar($ana, 1_000_000, 'privado', 'Privado'), null);
 verificar('saldo depois dos gastos', lv_saldo($ana), $antes - 25);
 
+// ============================================================================= app.js: eu, gastar, conta
+[$s, $r] = chamar('eu.php');
+verificar('eu.php logado', [$s, $r['logado'] ?? null, $r['usuario']['email'] ?? null, $r['saldo'] ?? null], [200, true, 'ana@exemplo.com.br', lv_saldo($ana)]);
+verificar('eu.php: apelido padrão do e-mail', $r['usuario']['apelido'] ?? null, 'ana');
+verificar('eu.php: extrato do mais novo ao mais velho', [$r['extrato'][0]['valor'] ?? null, $r['extrato'][0]['descricao'] ?? null], [-25, 'Gorjeta para Livia']);
+verificar('eu.php: data em ISO', (bool) preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/', (string) ($r['extrato'][0]['data'] ?? '')), true);
+
+$antes = lv_saldo($ana);
+[$s, $r] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 10]);
+verificar('gorjeta pela API', [$s, $r['saldo'] ?? null], [200, $antes - 10]);
+[$s, $r] = chamar('gastar.php', 'POST', ['tipo' => 'privado', 'modelo' => 'livia-voguel', 'creditos' => 1]);
+verificar('privado cobra o preço do servidor, não o do navegador', [$s, $r['creditos'] ?? null, $r['saldo'] ?? null], [200, 20, $antes - 30]);
+[$s] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => -50]);
+verificar('gorjeta negativa = 422', $s, 422);
+[$s] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => '10']);
+verificar('gorjeta em texto = 422', $s, 422);
+[$s] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'outra', 'creditos' => 10]);
+verificar('modelo desconhecida = 422', $s, 422);
+[$s] = chamar('gastar.php', 'POST', ['tipo' => 'compra', 'modelo' => 'livia-voguel', 'creditos' => 10]);
+verificar('tipo compra não existe no gastar', $s, 422);
+[$s, $r] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => LV_GORJETA_MAXIMA]);
+verificar('sem saldo = 402', [$s, $r['saldo'] ?? null], [402, $antes - 30]);
+verificar('402 não mexe no saldo', lv_saldo($ana), $antes - 30);
+$modelosJs = (string) file_get_contents($raiz . '/assets/js/modelos.js');
+preg_match_all('/slug:\s*"([^"]+)"[\s\S]*?precoPrivado:\s*(\d+)/', $modelosJs, $mm, PREG_SET_ORDER);
+verificar('modelos.php igual ao modelos.js', array_combine(array_column($mm, 1), array_map('intval', array_column($mm, 2))),
+    array_map(static fn(array $m): int => $m['preco_privado'], LV_MODELOS));
+
+[$s, $r] = chamar('conta.php', 'POST', ['apelido' => 'ana_v']);
+verificar('conta: muda apelido', [$s, $r['usuario']['apelido'] ?? null], [200, 'ana_v']);
+[$s] = chamar('conta.php', 'POST', ['apelido' => 'a b']);
+verificar('conta: apelido inválido = 422', $s, 422);
+[$s] = chamar('conta.php', 'POST', ['senha_atual' => 'errada123', 'senha_nova' => 'novasenha1']);
+verificar('conta: senha atual errada = 401', $s, 401);
+[$s] = chamar('conta.php', 'POST', ['senha_atual' => 'segredo123', 'senha_nova' => 'curta']);
+verificar('conta: nova senha curta = 422', $s, 422);
+[$s] = chamar('conta.php', 'POST', ['senha_atual' => 'segredo123', 'senha_nova' => 'novasenha1']);
+verificar('conta: troca a senha', $s, 200);
+$hashNovo = (string) lv_db()->query("SELECT senha_hash FROM lv_usuarios WHERE id = $ana")->fetchColumn();
+verificar('conta: senha nova vale', password_verify('novasenha1', $hashNovo), true);
+chamar('conta.php', 'POST', ['senha_atual' => 'novasenha1', 'senha_nova' => 'segredo123']);
+
 // ============================================================================= isolamento entre usuários
 $_SESSION = [];
 chamar('cadastro.php', 'POST', ['email' => 'bia@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
@@ -318,6 +360,18 @@ chamar('cadastro.php', 'POST', ['email' => 'bia@exemplo.com.br', 'senha' => 'seg
 verificar('outro usuário não vê o pedido', $s, 404);
 [$s, $r] = chamar('saldo.php');
 verificar('saldo do outro usuário = 0', $r['saldo'] ?? null, 0);
+[$s, $r] = chamar('eu.php');
+verificar('eu.php do outro usuário: extrato vazio', [$r['usuario']['apelido'] ?? null, $r['extrato'] ?? null], ['bia', []]);
+[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'apelido@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true, 'apelido' => 'x']);
+verificar('cadastro com apelido inválido = 422', [$s, $r['campo'] ?? null], [422, 'apelido']);
+[$s, $r] = chamar('cadastro.php', 'POST', ['email' => 'um.nome.bem.comprido.demais@exemplo.com.br', 'senha' => 'segredo123', 'maior18' => true]);
+verificar('apelido padrão de e-mail comprido', [$s, $r['usuario']['apelido'] ?? null], [201, 'um_nome_bem_comprido']);
+$_SESSION = [];
+[$s, $r] = chamar('eu.php');
+verificar('eu.php sem login = logado false', [$s, $r['logado'] ?? null], [200, false]);
+[$s] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 1]);
+verificar('gastar sem login = 401', $s, 401);
+$_SESSION = ['usuario_id' => (int) lv_db()->query("SELECT id FROM lv_usuarios WHERE email = 'bia@exemplo.com.br'")->fetchColumn()];
 [$s] = chamar('status.php', 'GET', null, ['id' => "' OR 1=1 --"]);
 verificar('id malformado = 404', $s, 404);
 

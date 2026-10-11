@@ -93,7 +93,7 @@
           <h2>Trocar senha</h2>
           <div class="linha">
             <div class="campo"><label for="senha-atual">Senha atual</label><input id="senha-atual" type="password" autocomplete="current-password"></div>
-            <div class="campo"><label for="senha-nova">Nova senha</label><input id="senha-nova" type="password" autocomplete="new-password" minlength="6"></div>
+            <div class="campo"><label for="senha-nova">Nova senha</label><input id="senha-nova" type="password" autocomplete="new-password" minlength="8"></div>
           </div>
           <button class="btn">Trocar senha</button>
         </form>
@@ -118,15 +118,17 @@
         const email = document.getElementById("email").value.trim();
         if (!/^\w{3,20}$/.test(apelido)) return LV.toast("Apelido: de 3 a 20 letras, números ou _");
         if (!/^\S+@\S+\.\S+$/.test(email)) return LV.toast("E-mail inválido.");
-        LV.entrar({ apelido, email });
+        if (!window.SITE.modoDemo && email !== u.email) return LV.toast("Para trocar o e-mail, fale com o suporte.");
         LV.gravar("lv_avisos", document.getElementById("avisos").checked ? "1" : "0");
-        LV.toast("Dados salvos!");
+        LV.entrar({ apelido, email }).then(() => LV.toast("Dados salvos!")).catch((err) => LV.toast(err.message));
       });
       document.getElementById("form-senha")?.addEventListener("submit", (e) => {
         e.preventDefault();
-        if (document.getElementById("senha-nova").value.length < 6) return LV.toast("A nova senha precisa de 6 caracteres ou mais.");
-        e.target.reset();
-        LV.toast("Senha alterada!");
+        const nova = document.getElementById("senha-nova").value;
+        if (nova.length < 8) return LV.toast("A nova senha precisa de 8 caracteres ou mais.");
+        LV.trocarSenha(document.getElementById("senha-atual").value, nova)
+          .then(() => { e.target.reset(); LV.toast("Senha alterada!"); })
+          .catch((err) => LV.toast(err.message));
       });
       document.getElementById("excluir")?.addEventListener("click", () => {
         const m = LV.modal(`
@@ -138,6 +140,11 @@
             <button class="btn btn-bloco" data-fechar>Cancelar</button>
           </div>`);
         m.querySelector("#confirmar").addEventListener("click", () => {
+          if (!window.SITE.modoDemo) {
+            // A exclusão é feita pelo suporte (os pedidos pagos precisam ficar guardados).
+            location.href = `mailto:${window.SITE.emailSuporte}?subject=${encodeURIComponent("Excluir minha conta")}&body=${encodeURIComponent("E-mail da conta: " + u.email)}`;
+            return;
+          }
           ["lv_usuario", "lv_extrato"].forEach((k) => { try { localStorage.removeItem(k); } catch {} });
           location.href = "index.html";
         });

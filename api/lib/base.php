@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/pacotes.php';
+require_once __DIR__ . '/modelos.php';
 require_once __DIR__ . '/unicopag.php';
 require_once __DIR__ . '/creditos.php';
 
@@ -10,6 +11,8 @@ require_once __DIR__ . '/creditos.php';
 const LV_COBRANCAS_POR_HORA = 15;
 const LV_ERROS_LOGIN = 10;
 const LV_JANELA_LOGIN = 900;
+/** Tamanho mínimo da senha (cadastro.html e conta.html usam o mesmo). */
+const LV_SENHA_MINIMA = 8;
 
 /** Resposta pronta. Nos testes (LV_TESTE), lv_json() lança isto em vez de encerrar o PHP. */
 class LvResposta extends RuntimeException
@@ -101,7 +104,8 @@ function lv_db(?PDO $usar = null): PDO
     if ($pdo instanceof PDO) {
         return $pdo;
     }
-    $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+    // DB_DSN: só para testar localmente com outro banco (ex.: sqlite:/caminho). Na Hostinger, fica sem.
+    $dsn = (string) lv_cfg('DB_DSN', '') ?: sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
         lv_cfg('DB_HOST', 'localhost'), (int) lv_cfg('DB_PORT', 3306), lv_cfg('DB_NAME', ''));
     try {
         $pdo = new PDO($dsn, (string) lv_cfg('DB_USER', ''), (string) lv_cfg('DB_SENHA', ''), [
@@ -198,6 +202,13 @@ function lv_email(mixed $valor): string
     return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : '';
 }
 
+/** Apelido público: 3 a 20 letras, números ou _ (a mesma regra do cadastro.html). Inválido = ''. */
+function lv_apelido(mixed $valor): string
+{
+    $apelido = lv_texto($valor, 40);
+    return preg_match('/^\w{3,20}$/', $apelido) ? $apelido : '';
+}
+
 function lv_cpf_valido(string $cpf): bool
 {
     $cpf = lv_digitos($cpf);
@@ -288,7 +299,7 @@ function lv_logar(int $usuarioId): void
 
 function lv_usuario(int $id): ?array
 {
-    $stmt = lv_db()->prepare('SELECT id, email FROM lv_usuarios WHERE id = ?');
+    $stmt = lv_db()->prepare('SELECT id, email, apelido FROM lv_usuarios WHERE id = ?');
     $stmt->execute([$id]);
     return $stmt->fetch() ?: null;
 }

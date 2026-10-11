@@ -9,7 +9,7 @@ window.SITE = {
 
   // true = login, saldo e pagamento simulados no navegador (para testar o visual).
   // Mude para false quando a pasta api/ (Unicopag) estiver no ar.
-  modoDemo: true,
+  modoDemo: false,
 
   // Pacotes de créditos. O preço cobrado de verdade é conferido no servidor
   // (api/), então mudar aqui exige mudar lá também.

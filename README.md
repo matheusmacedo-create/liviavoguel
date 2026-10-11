@@ -20,15 +20,13 @@ Todas as páginas mostram o aviso de **18+** na primeira visita.
 
 ## Modo demonstração
 
-Com `modoDemo: true` em `assets/js/config.js`, login, saldo, extrato e pagamento são simulados
-no navegador (há uma faixa amarela avisando). Dá para testar o fluxo inteiro: criar conta →
-comprar créditos → "Simular pagamento aprovado" → mandar gorjeta → show privado → ver o extrato.
+O padrão é `modoDemo: false`: login, saldo, extrato, gorjetas, privado e pagamento usam a pasta `api/`
+(veja "Pagamentos (Unicopag)" abaixo), que precisa de PHP + MySQL.
 
-O checkout já chama a API da integração Unicopag quando `modoDemo` for `false`:
-
-- `POST api/cobranca.php` com `{ pacote, metodo: "pix"|"cartao", nome, cpf, email, cartao? }`
-  → `{ id, status, pix?: { qrcode_base64, copia_cola, expira_em } }`
-- `GET api/status.php?id=…` → `{ status: "pendente"|"pago"|"falhou"|"expirado", creditos }`
+Para ver o visual sem servidor (por exemplo abrindo os arquivos direto ou num `npx serve`), mude para
+`modoDemo: true` em `assets/js/config.js`: tudo fica simulado no navegador (há uma faixa amarela avisando) e dá
+para testar o fluxo inteiro: criar conta → comprar créditos → "Simular pagamento aprovado" → gorjeta → privado →
+extrato. Nunca publique o site com `modoDemo: true`.
 
 > A `painel-modelo.html` ainda não tem senha. Antes de colocar o site no ar, ela precisa de login próprio da modelo.
 
@@ -52,13 +50,12 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 
 ## O que ainda é demonstração (próximas etapas)
 
-1. **Pagamento (Unicopag):** em andamento no branch `claude/unicopag-integracao`.
-2. **Transmissão ao vivo:** contratar um serviço de streaming que aceite conteúdo adulto e
+1. **Transmissão ao vivo:** contratar um serviço de streaming que aceite conteúdo adulto e
    colar o link do player no campo `streamUrl`. A modelo transmite pelo OBS (RTMP).
-3. **Login, cadastro e saldo no servidor:** hoje ficam simulados no navegador.
-4. **Chat em tempo real:** hoje as mensagens ficam só no navegador de quem escreve.
-5. **Status online automático:** hoje o campo `online` é manual.
-6. **Painel da modelo:** para ver ganhos, editar perfil e abrir ou fechar a sala.
+2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
+3. **Chat em tempo real:** hoje as mensagens ficam só no navegador de quem escreve.
+4. **Status online automático:** hoje o campo `online` é manual.
+5. **Painel da modelo:** para ver ganhos, editar perfil e abrir ou fechar a sala.
 
 Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
 
@@ -79,20 +76,28 @@ python3 -m http.server 8000
 
 O visitante cria uma conta, compra um pacote de créditos por **Pix** ou **cartão**, e os créditos entram no saldo
 quando a Unicopag confirma o pagamento. O backend fica em `api/` (PHP 8.1+ e MySQL, sem Composer). O navegador fala com
-ele por `assets/js/pagamento.js`.
+ele pelas funções de `assets/js/app.js` (`LV.login`, `LV.cadastrar`, `LV.saldo`, `LV.extrato`, `LV.lancar`…) e pelo
+`checkout.html`. O app guarda uma cópia do estado da conta para as páginas lerem na hora e a atualiza em
+`api/eu.php` a cada página aberta.
 
 | Endpoint | O que faz |
 |---|---|
-| `POST api/cadastro.php` | `{ email, senha, maior18: true }` → cria a conta e já entra |
+| `POST api/cadastro.php` | `{ apelido, email, senha, maior18: true }` → cria a conta e já entra (senha com 8+ caracteres) |
 | `POST api/entrar.php` / `POST api/sair.php` | Login e logout (sessão PHP) |
+| `GET api/eu.php` | `{ logado, usuario: { id, email, apelido }, saldo, extrato }` |
 | `GET api/saldo.php` | `{ saldo, email }` do usuário logado |
+| `POST api/conta.php` | `{ apelido }` e/ou `{ senha_atual, senha_nova }` |
+| `POST api/gastar.php` | `{ tipo: "gorjeta"\|"privado", modelo, creditos }` → debita no servidor (402 sem saldo) |
 | `POST api/cobranca.php` | `{ pacote, metodo: "pix"\|"cartao", nome, cpf, telefone?, cartao?: { numero, titular, validade "MM/AA", cvv } }` → cria a cobrança |
 | `GET api/status.php?id=…` | `{ status: "pendente"\|"pago"\|"falhou"\|"expirado"\|"estornado", creditos, saldo }` |
 | `POST api/webhook.php` | Aviso da Unicopag. Confere a cobrança na API antes de creditar e nunca credita duas vezes |
 
 Regras importantes:
 - **O preço sai do servidor** (`api/lib/pacotes.php`), nunca do navegador. Quando mudar um pacote em `assets/js/config.js`,
-  mude também em `api/lib/pacotes.php`. O teste avisa se os dois arquivos não baterem.
+  mude também em `api/lib/pacotes.php`. O mesmo vale para o preço do privado: `assets/js/modelos.js` →
+  `api/lib/modelos.php` (nova modelo também entra lá). O teste avisa se os arquivos não baterem.
+- **Créditos só entram pela compra confirmada.** Gorjeta e privado são debitados em `api/gastar.php`; o privado
+  cobra o preço do servidor, nunca o que o navegador mandar.
 - **O saldo é a soma do extrato** (tabela `lv_extrato`). Não existe número de saldo para editar.
 - **A chave da API é segredo.** Ela só existe no `api/config.php` do servidor, que está no `.gitignore`. Nunca coloque a
   chave em JavaScript, em HTML ou num commit.

@@ -182,7 +182,7 @@
         try {
           const r = await consultar(id);
           if (r.status === "pago") { clearInterval(timer); aprovado(); }
-          if (r.status === "falhou" || r.status === "expirado") { clearInterval(timer); falhou(r.status); }
+          if (r.status === "falhou" || r.status === "expirado" || r.status === "estornado") { clearInterval(timer); falhou(r.status); }
         } catch {}
       }, 4000);
     }
@@ -208,7 +208,9 @@
         <div class="pix-box">
           <h2>Pague com Pix</h2>
           <p style="color:var(--texto-2);margin-bottom:16px">Abra o app do seu banco e escaneie o QR Code ou use o Pix copia e cola.</p>
-          <div class="pix-qr">${r.pix.qrcode_base64 ? `<img alt="QR Code Pix" src="data:image/png;base64,${esc(r.pix.qrcode_base64)}">` : qrDemo()}</div>
+          <div class="pix-qr">${r.pix.qrcode_base64 ? `<img alt="QR Code Pix" src="data:image/png;base64,${esc(r.pix.qrcode_base64)}">`
+            : r.pix.qrcode_url ? `<img alt="QR Code Pix" src="${esc(r.pix.qrcode_url)}">`
+            : S.modoDemo ? qrDemo() : `<p style="color:var(--texto-2)">Use o Pix copia e cola abaixo.</p>`}</div>
           <strong style="font-size:1.4rem">${reais(pacote.preco)}</strong>
           <div class="copia-cola">
             <input id="copia" readonly value="${esc(r.pix.copia_cola)}" aria-label="Pix copia e cola">
@@ -241,6 +243,7 @@
       clearInterval(timer);
       const total = pacote.creditos + pacote.bonus;
       if (S.modoDemo) LV.lancar(total, `Compra de pacote · ${reais(pacote.preco)}`);
+      else LV.sincronizar(); // os créditos já entraram no servidor; atualiza o saldo do topo
       const sala = window.MODELOS.find((m) => m.online) || window.MODELOS[0];
       etapa.innerHTML = `
         <div class="passos-checkout"><span class="feito">1. Pacote</span><span class="feito">2. Pagamento</span><span class="feito">3. Confirmação</span></div>

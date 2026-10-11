@@ -79,17 +79,17 @@ function lv_aplicar_status(int $id, string $novo): array
     return lv_pedido_por('id', (string) $id) ?? [];
 }
 
-function lv_lancar(int $usuarioId, int $creditos, string $motivo, ?int $pedidoId, string $descricao): void
+function lv_lancar(int $usuarioId, int $creditos, string $motivo, ?int $pedidoId, string $descricao, ?string $modelo = null): void
 {
-    lv_db()->prepare('INSERT INTO lv_extrato (usuario_id, creditos, motivo, pedido_id, descricao, criado_em) VALUES (?, ?, ?, ?, ?, ?)')
-        ->execute([$usuarioId, $creditos, $motivo, $pedidoId, mb_substr($descricao, 0, 190), lv_agora()]);
+    lv_db()->prepare('INSERT INTO lv_extrato (usuario_id, creditos, motivo, pedido_id, modelo, descricao, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$usuarioId, $creditos, $motivo, $pedidoId, $modelo, mb_substr($descricao, 0, 190), lv_agora()]);
 }
 
 /**
  * Gasta créditos (gorjeta, show privado). Devolve o saldo novo, ou null se não houver saldo. A linha do usuário
  * fica travada durante a conta no MySQL, então dois gastos simultâneos não passam do saldo.
  */
-function lv_debitar(int $usuarioId, int $creditos, string $motivo, string $descricao): ?int
+function lv_debitar(int $usuarioId, int $creditos, string $motivo, string $descricao, ?string $modelo = null): ?int
 {
     if ($creditos <= 0 || !in_array($motivo, ['gorjeta', 'privado'], true)) {
         throw new InvalidArgumentException('débito inválido');
@@ -104,7 +104,7 @@ function lv_debitar(int $usuarioId, int $creditos, string $motivo, string $descr
             $pdo->rollBack();
             return null;
         }
-        lv_lancar($usuarioId, -$creditos, $motivo, null, $descricao);
+        lv_lancar($usuarioId, -$creditos, $motivo, null, $descricao, $modelo);
         $pdo->commit();
         return $saldo - $creditos;
     } catch (Throwable $e) {
@@ -113,6 +113,32 @@ function lv_debitar(int $usuarioId, int $creditos, string $motivo, string $descr
         }
         throw $e;
     }
+}
+
+/** Últimos lançamentos do extrato, no formato do app.js: { valor, descricao, data }. */
+function lv_extrato(int $usuarioId, int $limite = 200): array
+{
+    $stmt = lv_db()->prepare('SELECT creditos, descricao, criado_em FROM lv_extrato WHERE usuario_id = ? ORDER BY id DESC LIMIT ' . max(1, $limite));
+    $stmt->execute([$usuarioId]);
+    return array_map(static fn(array $l): array => [
+        'valor' => (int) $l['creditos'],
+        'descricao' => (string) $l['descricao'],
+        'data' => gmdate('Y-m-d\TH:i:s\Z', (int) strtotime($l['criado_em'] . ' UTC')),
+    ], $stmt->fetchAll());
+}
+
+/** Estado da conta para o app.js: quem está logado, saldo e extrato. */
+function lv_estado(?int $usuarioId): array
+{
+    $u = $usuarioId !== null ? lv_usuario($usuarioId) : null;
+    if (!$u) {
+        return ['ok' => true, 'logado' => false, 'usuario' => null, 'saldo' => 0, 'extrato' => []];
+    }
+    return [
+        'ok' => true, 'logado' => true,
+        'usuario' => ['id' => (int) $u['id'], 'email' => $u['email'], 'apelido' => $u['apelido']],
+        'saldo' => lv_saldo((int) $u['id']), 'extrato' => lv_extrato((int) $u['id']),
+    ];
 }
 
 /** Pendente: reconsulta a Unicopag (no máximo a cada $intervalo s) e vence depois de 25 h. */
