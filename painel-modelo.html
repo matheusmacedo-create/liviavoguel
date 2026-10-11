@@ -468,7 +468,7 @@
     function desenharModeracao(bloqueados) {
       const caixa = document.getElementById("mod-msgs");
       if (!caixa) return;
-      const lista = [...modMsgs.values()].slice(-50).reverse(); // mais novas em cima
+      const lista = [...modMsgs.values()].sort((a, b) => a.id - b.id).slice(-50).reverse(); // mais novas em cima
       caixa.innerHTML = lista.length ? `<div class="tabela-rolagem"><table class="tabela">
         <thead><tr><th>Hora</th><th>De</th><th>Mensagem</th><th></th></tr></thead>
         <tbody>${lista.map((msg) => `<tr>
@@ -490,7 +490,8 @@
     async function carregarModeracao() {
       if (!document.getElementById("mod-msgs") || document.hidden) return;
       try {
-        const r = await LV.api("modelo-chat.php?depois=" + modUltimo);
+        // Volta alguns ids (como a sala): mensagem gravada fora de ordem não se perde; o Map ignora as repetidas.
+        const r = await LV.api("modelo-chat.php?depois=" + Math.max(0, modUltimo - 20));
         r.mensagens.forEach((msg) => { modMsgs.set(msg.id, msg); modUltimo = Math.max(modUltimo, msg.id); });
         r.apagadas.forEach((id) => modMsgs.delete(id));
         desenharModeracao(r.bloqueados);

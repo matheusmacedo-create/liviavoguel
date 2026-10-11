@@ -88,7 +88,7 @@
         </form>
         <form class="painel" id="form-email" novalidate>
           <h2>Trocar e-mail</h2>
-          <p style="color:var(--texto-2);margin-bottom:14px">Hoje você entra com <strong>${esc(u.email)}</strong>. O novo e-mail passa a valer para o login na hora.</p>
+          <p style="color:var(--texto-2);margin-bottom:14px">Hoje você entra com <strong>${esc(u.email || "…")}</strong>. O novo e-mail passa a valer para o login na hora.</p>
           <div class="linha">
             <div class="campo"><label for="email-novo">Novo e-mail</label><input id="email-novo" type="email" autocomplete="email"></div>
             <div class="campo"><label for="email-senha">Sua senha</label><input id="email-senha" type="password" autocomplete="current-password"></div>
@@ -192,7 +192,12 @@
     }
 
     if (!u) location.replace("entrar.html?volta=conta.html");
-    else { window.addEventListener("hashchange", abrir); abrir(); }
+    else {
+      window.addEventListener("hashchange", abrir);
+      abrir();
+      // E-mail e extrato não ficam guardados no navegador: chegam do servidor logo depois de abrir a página.
+      document.addEventListener("lv:estado", () => { Object.assign(u, LV.usuario() || {}); abrir(); }, { once: true });
+    }
   </script>
 </body>
 </html>

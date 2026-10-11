@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS lv_extrato (
   CONSTRAINT fk_extrato_usuario FOREIGN KEY (usuario_id) REFERENCES lv_usuarios (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Declaração de maioridade feita no cadastro: a data de nascimento informada (conferida no servidor: 18 anos ou
+-- mais), o IP e quando. Fica como registro de que a pessoa declarou ser maior de idade. Ao excluir a conta, a data e
+-- o IP são apagados e fica só o fato de que a declaração foi feita.
+CREATE TABLE IF NOT EXISTS lv_usuarios_declaracoes (
+  usuario_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  nascimento DATE NULL,
+  ip VARCHAR(45) NULL,
+  declarado_em DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Registro de eventos: freios (tentativas de login, cobranças por hora) e rastro dos avisos da Unicopag.
 CREATE TABLE IF NOT EXISTS lv_eventos (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
