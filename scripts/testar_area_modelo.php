@@ -23,6 +23,7 @@ $_SERVER['REQUEST_METHOD'] = 'CLI';
 require $raiz . '/api/lib/base.php';
 require $raiz . '/api/lib/modelo-conta.php';
 require $raiz . '/api/lib/chat.php';
+require $raiz . '/api/lib/saques.php';
 
 $falhas = 0;
 $total = 0;
@@ -633,6 +634,82 @@ verificar('ação inválida: 422', $s, 422);
 verificar('id em texto: 404', $s, 404);
 [$s] = chamar('modelo-chat.php', 'POST', ['acao' => 'apagar', 'id' => $m1], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
 verificar('moderar vindo de outro site: 403', $s, 403);
+
+// ============================================================================= saques
+recomecar();
+$idConta = criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$pdo = lv_db();
+$pdo->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES ('fa@exemplo.com.br', 'fa_1', 'x', '2026-01-01 00:00:00')");
+$fa = (int) $pdo->lastInsertId();
+$receber = static fn(int $creditos) => lv_lancar($fa, -$creditos, 'gorjeta', null, 'Gorjeta', 'livia-voguel');
+$saque = static fn(array $corpo) => chamar('modelo-saque.php', 'POST', $corpo);
+$_GET = [];
+
+$_SESSION = ['usuario_id' => $fa];
+[$s] = chamar('modelo-saque.php');
+verificar('cliente não vê saques: 401', $s, 401);
+
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s, $c] = chamar('modelo-saque.php');
+verificar('sem ganhos: nada disponível, sem chave', [$s, $c['disponivel'], $c['pix'], $c['minimo_centavos']], [200, ['creditos' => 0, 'centavos' => 0], null, 5000]);
+
+$chaves = [
+    'cpf com pontuação' => ['cpf', '529.982.247-25', '52998224725'],
+    'e-mail em maiúsculas' => ['email', ' Livia@Exemplo.com.BR ', 'livia@exemplo.com.br'],
+    'celular' => ['celular', '(21) 99999-8888', '+5521999998888'],
+    'aleatória' => ['aleatoria', '123E4567-E89B-12D3-A456-426614174000', '123e4567-e89b-12d3-a456-426614174000'],
+];
+foreach ($chaves as $nome => [$tipo, $chave, $esperado]) {
+    [$s, $c] = $saque(['acao' => 'pix', 'tipo' => $tipo, 'chave' => $chave]);
+    verificar("chave Pix ($nome)", [$s, $c['pix']], [200, ['tipo' => $tipo, 'chave' => $esperado]]);
+}
+$ruins = ['cpf inválido' => ['cpf', '529.982.247-26'], 'e-mail inválido' => ['email', 'livia@'], 'fixo no lugar de celular' => ['celular', '(21) 3333-4444'],
+    'aleatória curta' => ['aleatoria', '123e4567'], 'chave em lista' => ['cpf', ['52998224725']]];
+foreach ($ruins as $nome => [$tipo, $chave]) {
+    [$s, $c] = $saque(['acao' => 'pix', 'tipo' => $tipo, 'chave' => $chave]);
+    verificar("chave Pix recusada ($nome): 422", [$s, $c['campo'] ?? null], [422, 'chave']);
+}
+[$s, $c] = $saque(['acao' => 'pix', 'tipo' => 'banco', 'chave' => 'x']);
+verificar('tipo de chave inválido: 422', [$s, $c['campo'] ?? null], [422, 'tipo']);
+verificar('chave recusada não troca a salva', lv_pix_da_modelo('livia-voguel')['tipo'], 'aleatoria');
+
+$receber(100); // 100 créditos × R$ 0,20 = R$ 20,00 (abaixo do mínimo de R$ 50,00)
+[$s, $c] = $saque(['acao' => 'pedir']);
+verificar('abaixo do mínimo: 409', [$s, $c['erro']], [409, 'O saque mínimo é de R$ 50,00.']);
+$receber(200); // 300 créditos = R$ 60,00
+[$s, $c] = $saque(['acao' => 'pedir']);
+verificar('pedir saque: 200, sai tudo o que está disponível', [$s, $c['saques'][0]['creditos'], $c['saques'][0]['centavos'], $c['saques'][0]['status']], [200, 300, 6000, 'pendente']);
+verificar('pedido guarda a chave do momento', $c['saques'][0]['pix'], ['tipo' => 'aleatoria', 'chave' => '123e4567-e89b-12d3-a456-426614174000']);
+verificar('depois de pedir: nada disponível', $c['disponivel'], ['creditos' => 0, 'centavos' => 0]);
+$receber(400); // R$ 80,00 novos
+[$s, $c] = $saque(['acao' => 'pedir']);
+verificar('um saque pendente por vez: 409', [$s, $c['erro']], [409, 'Você já tem um saque esperando pagamento.']);
+
+$pdo->exec("UPDATE lv_saques SET status = 'pago', pago_em = '2026-10-11 12:00:00' WHERE status = 'pendente'");
+[, $c] = chamar('modelo-saque.php');
+verificar('pago pela equipe: aparece pago e libera o próximo', [$c['saques'][0]['status'], $c['saques'][0]['pago_em'], $c['disponivel']['creditos']], ['pago', '2026-10-11T12:00:00Z', 400]);
+[$s, $c] = $saque(['acao' => 'pedir']);
+verificar('segundo saque: só os créditos novos', [$s, $c['saques'][0]['creditos']], [200, 400]);
+$pdo->exec("UPDATE lv_saques SET status = 'recusado', observacao = 'Chave errada' WHERE status = 'pendente'");
+[, $c] = chamar('modelo-saque.php');
+verificar('recusado devolve os créditos ao disponível', [$c['saques'][0]['status'], $c['saques'][0]['observacao'], $c['disponivel']['creditos']], ['recusado', 'Chave errada', 400]);
+
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_SAQUE_MINIMO_CENTAVOS' => 10000];");
+[$s, $c] = $saque(['acao' => 'pedir']);
+verificar('mínimo configurável no config.php', [$s, $c['erro']], [409, 'O saque mínimo é de R$ 100,00.']);
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
+
+$pdo->exec("DELETE FROM lv_modelos_pix");
+[$s, $c] = $saque(['acao' => 'pedir']);
+verificar('sem chave Pix não pede: 409', [$s, $c['erro']], [409, 'Cadastre sua chave Pix antes de pedir o saque.']);
+[$s] = $saque(['acao' => 'sacar-tudo']);
+verificar('ação inválida: 422', $s, 422);
+[$s] = chamar('modelo-saque.php', 'POST', ['acao' => 'pedir'], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('saque vindo de outro site: 403', $s, 403);
+foreach (['ao-vivo.php', 'perfis.php', 'salas.php'] as $publico) {
+    verificar("$publico não mostra chave Pix", str_contains(json_encode(chamar($publico)[1]), '123e4567'), false);
+}
 
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
