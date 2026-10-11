@@ -202,3 +202,105 @@ function lv_ao_vivo_definir(string $slug, bool $online): array
     }
     return lv_ao_vivo_todas()[$slug];
 }
+
+// ----------------------------------------------------------------------------- perfil
+
+/** Limites do perfil (o painel usa os mesmos). */
+const LV_PERFIL_LIMITES = ['nome' => 40, 'cidade' => 60, 'bio' => 600, 'tag' => 20, 'tags' => 10, 'idiomas' => 5];
+
+/** Lista de textos curtos (interesses, idiomas): sem vazios, sem repetidos, cada um até $max caracteres. */
+function lv_perfil_lista(mixed $valor, int $maxItens, int $max): ?array
+{
+    if (!is_array($valor) || !array_is_list($valor)) {
+        return null;
+    }
+    $lista = [];
+    foreach ($valor as $item) {
+        if (!is_string($item)) {
+            return null;
+        }
+        $texto = lv_texto($item, 1000);
+        if ($texto === '') {
+            continue;
+        }
+        if (mb_strlen($texto) > $max) {
+            return null;
+        }
+        $lista[mb_strtolower($texto)] ??= $texto;
+    }
+    $lista = array_values($lista);
+    return count($lista) <= $maxItens ? $lista : null;
+}
+
+/**
+ * Confere o perfil vindo do painel. Devolve [perfil, null] se estiver certo, ou [null, [campo, mensagem]].
+ * Textos passam por lv_texto (espaços repetidos e quebras de linha viram um espaço só).
+ */
+function lv_perfil_validar(array $b): array
+{
+    $l = LV_PERFIL_LIMITES;
+    $bruto = static fn(string $c): string => is_string($b[$c] ?? null) ? $b[$c] : '';
+    $nome = lv_texto($bruto('nome'), 1000);
+    $cidade = lv_texto($bruto('cidade'), 1000);
+    $bio = lv_texto($bruto('bio'), 5000);
+    if (mb_strlen($nome) < 2 || mb_strlen($nome) > $l['nome']) {
+        return [null, ['nome', "O nome artístico precisa ter de 2 a {$l['nome']} caracteres."]];
+    }
+    if (mb_strlen($cidade) > $l['cidade']) {
+        return [null, ['cidade', "A cidade pode ter até {$l['cidade']} caracteres."]];
+    }
+    if (mb_strlen($bio) > $l['bio']) {
+        return [null, ['bio', "O \"Sobre mim\" pode ter até {$l['bio']} caracteres."]];
+    }
+    $tags = lv_perfil_lista($b['tags'] ?? [], $l['tags'], $l['tag']);
+    if ($tags === null) {
+        return [null, ['tags', "Até {$l['tags']} interesses, cada um com até {$l['tag']} caracteres."]];
+    }
+    $idiomas = lv_perfil_lista($b['idiomas'] ?? [], $l['idiomas'], $l['tag']);
+    if ($idiomas === null || $idiomas === []) {
+        return [null, ['idiomas', "Informe de 1 a {$l['idiomas']} idiomas."]];
+    }
+    return [['nome' => $nome, 'cidade' => $cidade, 'bio' => $bio, 'tags' => $tags, 'idiomas' => $idiomas], null];
+}
+
+/** Perfis salvos: [slug => perfil]. Só modelos de LV_MODELOS; quem nunca salvou não aparece. */
+function lv_perfis(): array
+{
+    $saida = [];
+    foreach (lv_db()->query('SELECT slug, nome, cidade, bio, tags, idiomas, atualizado_em FROM lv_modelos_perfil')->fetchAll() as $p) {
+        if (!isset(LV_MODELOS[$p['slug']])) {
+            continue;
+        }
+        $saida[$p['slug']] = [
+            'nome' => (string) $p['nome'],
+            'cidade' => (string) $p['cidade'],
+            'bio' => (string) $p['bio'],
+            'tags' => json_decode((string) $p['tags'], true) ?: [],
+            'idiomas' => json_decode((string) $p['idiomas'], true) ?: [],
+            'atualizado_em' => gmdate('Y-m-d\TH:i:s\Z', (int) strtotime($p['atualizado_em'] . ' UTC')),
+        ];
+    }
+    return $saida;
+}
+
+function lv_perfil_salvar(string $slug, array $perfil): array
+{
+    $pdo = lv_db();
+    $json = static fn(array $v): string => json_encode($v, JSON_UNESCAPED_UNICODE);
+    $valores = [$perfil['nome'], $perfil['cidade'], $perfil['bio'], $json($perfil['tags']), $json($perfil['idiomas']), lv_agora()];
+    $update = 'UPDATE lv_modelos_perfil SET nome = ?, cidade = ?, bio = ?, tags = ?, idiomas = ?, atualizado_em = ? WHERE slug = ?';
+    $stmt = $pdo->prepare($update);
+    $stmt->execute([...$valores, $slug]);
+    if ($stmt->rowCount() === 0) {
+        try {
+            $pdo->prepare('INSERT INTO lv_modelos_perfil (nome, cidade, bio, tags, idiomas, atualizado_em, slug) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                ->execute([...$valores, $slug]);
+        } catch (PDOException $e) {
+            if (!lv_e_duplicado($e)) {
+                throw $e;
+            }
+            $pdo->prepare($update)->execute([...$valores, $slug]); // já existia e nada mudou, ou outra aba salvou junto
+        }
+    }
+    return lv_perfis()[$slug];
+}

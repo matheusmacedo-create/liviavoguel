@@ -42,6 +42,7 @@
   <script src="assets/js/config.js"></script>
   <script src="assets/js/modelos.js"></script>
   <script src="assets/js/ao-vivo.js"></script>
+  <script src="assets/js/perfis.js"></script>
   <script src="assets/js/app.js"></script>
   <script>
     LV.montar("inicio");
@@ -91,9 +92,11 @@
       });
       render(filtro);
       document.addEventListener("lv:ao-vivo", () => render(filtro));
+      document.addEventListener("lv:perfil", () => render(filtro));
     }
     // Status vindo do servidor (ou do painel, no modo demonstração)
     document.addEventListener("lv:ao-vivo", desenharHero);
+    document.addEventListener("lv:perfil", desenharHero);
   </script>
 </body>
 </html>
