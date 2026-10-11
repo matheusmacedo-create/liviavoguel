@@ -25,8 +25,10 @@ if (!$conta || !password_verify(is_string($b['senha'] ?? null) ? $b['senha'] : '
     lv_registrar('login_erro', 'u:' . $usuarioId);
     lv_falhar(401, 'A senha não confere.', ['campo' => 'senha']);
 }
-$pendente = lv_db()->prepare("SELECT COUNT(*) FROM lv_pedidos WHERE usuario_id = ? AND status = 'pendente'");
-$pendente->execute([$usuarioId]);
+// Só pendentes que ainda podem ser pagos: depois de LV_VENCIMENTO_SEGUNDOS um pendente vence (lib/creditos.php),
+// mesmo que ninguém tenha consultado o status (Pix abandonado, cobrança cuja resposta se perdeu).
+$pendente = lv_db()->prepare("SELECT COUNT(*) FROM lv_pedidos WHERE usuario_id = ? AND status = 'pendente' AND criado_em > ?");
+$pendente->execute([$usuarioId, gmdate('Y-m-d H:i:s', time() - LV_VENCIMENTO_SEGUNDOS)]);
 if ((int) $pendente->fetchColumn() > 0) {
     lv_falhar(409, 'Você tem um pagamento em andamento. Espere ele ser concluído ou vencer e tente de novo.');
 }

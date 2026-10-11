@@ -984,7 +984,7 @@ foreach ([['ana@exemplo.com.br', 'ana_rj'], ['bia@exemplo.com.br', 'bia_sp']] as
 $_SESSION = [];
 [$s] = chamar('conta-email.php', 'POST', ['email_novo' => 'x@exemplo.com.br', 'senha' => $senhaCli]);
 verificar('trocar e-mail sem login: 401', $s, 401);
-$_SESSION = ['usuario_id' => $ana];
+$_SESSION = sessao_cliente($ana);
 [$s, $c] = chamar('conta-email.php', 'POST', ['email_novo' => 'ana.nova@exemplo.com.br', 'senha' => 'errada']);
 verificar('trocar e-mail com senha errada: 401 no campo senha', [$s, $c['campo'] ?? null], [401, 'senha']);
 [$s, $c] = chamar('conta-email.php', 'POST', ['email_novo' => 'ana@', 'senha' => $senhaCli]);
@@ -1001,7 +1001,7 @@ verificar('e-mail antigo não entra mais', $s, 401);
 [$s] = chamar('entrar.php', 'POST', ['email' => 'ana.nova@exemplo.com.br', 'senha' => $senhaCli]);
 verificar('e-mail novo entra', $s, 200);
 $pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro'");
-$_SESSION = ['usuario_id' => $ana];
+$_SESSION = sessao_cliente($ana);
 for ($i = 0; $i < LV_ERROS_LOGIN; $i++) { chamar('conta-email.php', 'POST', ['email_novo' => "z$i@exemplo.com.br", 'senha' => 'chute']); }
 [$s] = chamar('conta-email.php', 'POST', ['email_novo' => 'z@exemplo.com.br', 'senha' => $senhaCli]);
 verificar('chutes de senha ao trocar e-mail: espera', $s, 429);
@@ -1018,7 +1018,7 @@ lv_registrar('login_erro', 'e:ana.nova@exemplo.com.br');
 $pdo->prepare("INSERT INTO lv_pedidos (codigo, usuario_id, pacote, creditos, valor_centavos, metodo, status, criado_em, atualizado_em) VALUES ('p1', ?, 0, 50, 1990, 'pix', 'pendente', ?, ?)")
     ->execute([$ana, lv_agora(), lv_agora()]);
 
-$_SESSION = ['usuario_id' => $ana];
+$_SESSION = sessao_cliente($ana);
 [$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'excluir']);
 verificar('excluir sem digitar EXCLUIR: 422', [$s, $c['campo'] ?? null], [422, 'confirmacao']);
 [$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => 'errada', 'confirmacao' => 'EXCLUIR']);
@@ -1048,7 +1048,7 @@ verificar('mensagem dela some da sala; a gorjeta fica sem nome nem recado', [arr
 verificar('extrato e pedidos ficam (registro financeiro)', [(int) $pdo->query("SELECT COUNT(*) FROM lv_extrato WHERE usuario_id = $ana")->fetchColumn(), (int) $pdo->query("SELECT COUNT(*) FROM lv_pedidos WHERE usuario_id = $ana")->fetchColumn()], [2, 1]);
 verificar('ganhos da modelo continuam certos', lv_modelo_soma('livia-voguel')['creditos'], 20);
 verificar('bloqueio no chat dela some', (int) $pdo->query("SELECT COUNT(*) FROM lv_chat_bloqueios WHERE usuario_id = $ana")->fetchColumn(), 0);
-$_SESSION = ['usuario_id' => $bia];
+$_SESSION = sessao_cliente($bia);
 [, $c] = chamar('eu.php');
 verificar('a outra conta não é afetada', $c['usuario']['email'], 'bia@exemplo.com.br');
 [$s] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'EXCLUIR'], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
