@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sala ao vivo</title>
+  <meta name="rating" content="adult">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="container">
+    <div class="sala" id="sala"></div>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    LV.montar("sala");
+    const { esc, toast, saldo } = LV;
+
+    const slug = new URLSearchParams(location.search).get("m");
+    const m = window.MODELOS.find((x) => x.slug === slug) || window.MODELOS[0];
+    document.title = `${m.nome} — Sala ao vivo`;
+
+    // Player: se houver streamUrl, embute o player do serviço de streaming.
+    let player;
+    if (m.online && m.streamUrl) {
+      player = `<iframe src="${esc(m.streamUrl)}" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+    } else {
+      player = `
+        <div class="player-capa"><img src="${esc(m.foto)}" alt=""></div>
+        <div class="player-msg"><div>
+          ${m.online
+            ? `<h3>${esc(m.nome)} está ao vivo</h3><p>Entre na sua conta para assistir à transmissão.</p>
+               <button class="btn btn-primario" data-acao="entrar">Entrar para assistir</button>`
+            : `<h3>${esc(m.nome)} está offline</h3><p>Confira a agenda e volte no próximo horário.</p>
+               <button class="btn" data-aba="agenda">Ver agenda</button>`}
+        </div></div>`;
+    }
+
+    document.getElementById("sala").innerHTML = `
+      <section>
+        <div class="sala-cabecalho">
+          <img class="avatar" src="${esc(m.foto)}" alt="">
+          <div>
+            <h1>${esc(m.nome)}</h1>
+            <small>${m.idade} anos · ${esc(m.cidade)}</small>
+          </div>
+          <span class="${m.online ? "badge-online" : "badge-offline"}">${m.online ? "Ao vivo" : "Offline"}</span>
+          <div class="acoes">
+            <button class="btn btn-pequeno" id="seguir">♡ Seguir</button>
+          </div>
+        </div>
+
+        <div class="player">${player}</div>
+
+        <div class="barra-gorjeta">
+          <strong>Gorjeta:</strong>
+          ${window.SITE.gorjetas.map((v) => `<button data-gorjeta="${v}">● ${v}</button>`).join("")}
+          <button class="btn btn-primario btn-pequeno privado" id="privado">🔒 Show privado · ${m.precoPrivado} créditos/min</button>
+        </div>
+
+        <div class="abas" id="abas">
+          <button class="ativo" data-aba="sobre">Sobre mim</button>
+          <button data-aba="galeria">Fotos</button>
+          <button data-aba="agenda">Agenda</button>
+        </div>
+        <div class="aba-conteudo" id="aba"></div>
+      </section>
+
+      <aside class="chat">
+        <div class="chat-topo"><strong>Chat ao vivo</strong></div>
+        <div class="chat-msgs" id="msgs">
+          <div class="msg sistema">Bem-vindo(a) à sala de ${esc(m.nome)}! Seja respeitoso(a) 💜</div>
+        </div>
+        <form class="chat-form" id="chat-form">
+          <input id="chat-input" maxlength="200" placeholder="Diga oi..." autocomplete="off">
+          <button class="btn btn-primario btn-pequeno">Enviar</button>
+        </form>
+      </aside>`;
+
+    // Abas
+    const abas = {
+      sobre: () => `
+        <p>${esc(m.bio)}</p>
+        <h4>Interesses</h4>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${m.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+        <h4>Idiomas</h4><p>${m.idiomas.map(esc).join(", ")}</p>`,
+      galeria: () => `<div class="galeria">${m.galeria.map((f) => `<img src="${esc(f)}" alt="" loading="lazy">`).join("")}</div>`,
+      agenda: () => `<ul class="lista-agenda">${m.agenda.map((a) => `<li><span>${esc(a.dia)}</span><strong>${esc(a.hora)}</strong></li>`).join("")}</ul>`
+    };
+    const abrirAba = (nome) => {
+      document.querySelectorAll("#abas button").forEach((b) => b.classList.toggle("ativo", b.dataset.aba === nome));
+      document.getElementById("aba").innerHTML = abas[nome]();
+    };
+    abrirAba("sobre");
+
+    document.addEventListener("click", (e) => {
+      const aba = e.target.closest("[data-aba]");
+      if (aba) { abrirAba(aba.dataset.aba); if (!aba.closest("#abas")) document.getElementById("abas").scrollIntoView({ behavior: "smooth" }); }
+
+      const g = e.target.closest("[data-gorjeta]");
+      if (g) {
+        if (saldo() < Number(g.dataset.gorjeta)) toast("Créditos insuficientes. Compre créditos para mandar gorjetas.");
+      }
+      if (e.target.closest("#privado")) {
+        if (!m.online) toast(`${m.nome} está offline agora.`);
+        else if (saldo() < m.precoPrivado) toast("Você precisa de créditos para chamar no privado.");
+      }
+      if (e.target.closest("#seguir")) {
+        const seguindo = LV.ler("lv_seguir_" + m.slug) === "1";
+        LV.gravar("lv_seguir_" + m.slug, seguindo ? "0" : "1");
+        e.target.textContent = seguindo ? "♡ Seguir" : "♥ Seguindo";
+        toast(seguindo ? "Você deixou de seguir." : `Você agora segue ${m.nome}!`);
+      }
+    });
+    if (LV.ler("lv_seguir_" + m.slug) === "1") document.getElementById("seguir").textContent = "♥ Seguindo";
+
+    // Chat: por enquanto local (só no seu navegador).
+    // Na próxima etapa ele é ligado a um servidor em tempo real.
+    const msgs = document.getElementById("msgs");
+    document.getElementById("chat-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const input = document.getElementById("chat-input");
+      const texto = input.value.trim();
+      if (!texto) return;
+      msgs.insertAdjacentHTML("beforeend", `<div class="msg"><b>Você:</b>${esc(texto)}</div>`);
+      msgs.scrollTop = msgs.scrollHeight;
+      input.value = "";
+    });
+  </script>
+</body>
+</html>

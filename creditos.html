@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comprar créditos</title>
+  <meta name="rating" content="adult">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main>
+    <section class="secao"><div class="container">
+      <h2>Comprar créditos</h2>
+      <p style="color:var(--texto-2);margin:-10px 0 28px">Use créditos para mandar gorjetas e chamar no show privado. Créditos não expiram.</p>
+      <div class="pacotes" id="pacotes"></div>
+      <p style="color:var(--texto-2);font-size:.85rem;margin-top:18px">🔒 Pagamento seguro · Pix e cartão · Cobrança discreta na fatura</p>
+    </div></section>
+
+    <section class="secao faq"><div class="container">
+      <h2>Dúvidas frequentes</h2>
+      <details><summary>Como os créditos funcionam?</summary><p>Cada crédito é usado para gorjetas e para pagar o show privado por minuto. O saldo aparece no topo do site.</p></details>
+      <details><summary>Como aparece na fatura do cartão?</summary><p>Com um nome comercial discreto, sem referência ao conteúdo do site.</p></details>
+      <details><summary>Quanto custa o show privado?</summary><p>O valor por minuto aparece na sala de cada modelo, ao lado do botão "Show privado".</p></details>
+      <details><summary>Posso pedir reembolso?</summary><p>Créditos não utilizados podem ser analisados pelo suporte. Escreva para o e-mail do rodapé.</p></details>
+    </div></section>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    LV.montar("creditos");
+    const { reais } = LV;
+    const pacotes = window.SITE.pacotes;
+
+    document.getElementById("pacotes").innerHTML = pacotes.map((p, i) => `
+      <div class="pacote ${p.popular ? "popular" : ""}">
+        ${p.popular ? `<span class="selo">Mais escolhido</span>` : ""}
+        <div class="qtd">${p.creditos + p.bonus} <small>créditos</small></div>
+        <div class="bonus">${p.bonus ? `+${p.bonus} de bônus incluídos` : ""}</div>
+        <div class="preco">${reais(p.preco)}</div>
+        <button class="btn ${p.popular ? "btn-primario" : ""} btn-bloco" data-i="${i}">Comprar</button>
+      </div>`).join("");
+
+    document.getElementById("pacotes").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-i]"); if (!b) return;
+      const p = pacotes[b.dataset.i];
+      if (p.checkoutUrl) location.href = p.checkoutUrl;
+      else LV.toast("Pagamento ainda não configurado. Adicione o link do gateway em assets/js/config.js.");
+    });
+  </script>
+</body>
+</html>
