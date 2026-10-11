@@ -81,13 +81,19 @@
       dados: () => `
         <form class="painel" id="form-dados" novalidate>
           <h2>Meus dados</h2>
-          <div class="linha">
-            <div class="campo"><label for="apelido">Apelido</label><input id="apelido" value="${esc(u.apelido)}" maxlength="20"></div>
-            <div class="campo"><label for="email">E-mail</label><input id="email" type="email" value="${esc(u.email)}"></div>
-          </div>
+          <div class="campo"><label for="apelido">Apelido</label><input id="apelido" value="${esc(u.apelido)}" maxlength="20"></div>
           <label class="check"><input type="checkbox" id="avisos" ${LV.ler("lv_avisos", "1") === "1" ? "checked" : ""}>
             <span>Quero receber e-mail quando uma modelo que eu sigo entrar ao vivo.</span></label>
           <button class="btn btn-primario">Salvar</button>
+        </form>
+        <form class="painel" id="form-email" novalidate>
+          <h2>Trocar e-mail</h2>
+          <p style="color:var(--texto-2);margin-bottom:14px">Hoje você entra com <strong>${esc(u.email)}</strong>. O novo e-mail passa a valer para o login na hora.</p>
+          <div class="linha">
+            <div class="campo"><label for="email-novo">Novo e-mail</label><input id="email-novo" type="email" autocomplete="email"></div>
+            <div class="campo"><label for="email-senha">Sua senha</label><input id="email-senha" type="password" autocomplete="current-password"></div>
+          </div>
+          <button class="btn">Trocar e-mail</button>
         </form>
         <form class="painel" id="form-senha" novalidate>
           <h2>Trocar senha</h2>
@@ -99,7 +105,8 @@
         </form>
         <div class="painel">
           <h2>Excluir conta</h2>
-          <p style="color:var(--texto-2);margin-bottom:14px">Apaga sua conta e seus dados. Créditos não usados são perdidos.</p>
+          <p style="color:var(--texto-2);margin-bottom:14px">Apaga seus dados pessoais (e-mail, apelido e mensagens do chat) e encerra a conta.
+            Créditos não usados são perdidos. Os registros de pagamento ficam guardados sem seus dados, como manda a lei.</p>
           <button class="btn perigo" id="excluir">Excluir minha conta</button>
         </div>`
     };
@@ -115,12 +122,32 @@
       document.getElementById("form-dados")?.addEventListener("submit", (e) => {
         e.preventDefault();
         const apelido = document.getElementById("apelido").value.trim();
-        const email = document.getElementById("email").value.trim();
         if (!/^\w{3,20}$/.test(apelido)) return LV.toast("Apelido: de 3 a 20 letras, números ou _");
-        if (!/^\S+@\S+\.\S+$/.test(email)) return LV.toast("E-mail inválido.");
-        if (!window.SITE.modoDemo && email !== u.email) return LV.toast("Para trocar o e-mail, fale com o suporte.");
         LV.gravar("lv_avisos", document.getElementById("avisos").checked ? "1" : "0");
-        LV.entrar({ apelido, email }).then(() => LV.toast("Dados salvos!")).catch((err) => LV.toast(err.message));
+        LV.entrar({ apelido, email: u.email }).then(() => LV.toast("Dados salvos!")).catch((err) => LV.toast(err.message));
+      });
+      document.getElementById("form-email")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = document.getElementById("email-novo").value.trim();
+        const senha = document.getElementById("email-senha").value;
+        if (!/^\S+@\S+\.\S+$/.test(email)) return LV.toast("Informe um e-mail válido.");
+        if (window.SITE.modoDemo) {
+          LV.entrar({ apelido: u.apelido, email });
+          u.email = email;
+          LV.toast("E-mail trocado!");
+          return abrir();
+        }
+        if (!senha) return LV.toast("Digite sua senha para confirmar.");
+        try {
+          await LV.api("conta-email.php", { email_novo: email, senha });
+          await LV.sincronizar();
+          u.email = email.toLowerCase();
+          LV.toast("E-mail trocado! Use o novo para entrar.");
+          abrir();
+        } catch (err) {
+          if (err.status === 401 && err.campo !== "senha") return location.replace("entrar.html?volta=conta.html");
+          LV.toast(err.message);
+        }
       });
       document.getElementById("form-senha")?.addEventListener("submit", (e) => {
         e.preventDefault();
@@ -133,20 +160,33 @@
       document.getElementById("excluir")?.addEventListener("click", () => {
         const m = LV.modal(`
           <div class="modal-icone" style="color:#ff7a90">!</div>
-          <h2>Excluir conta?</h2>
-          <p>Essa ação não pode ser desfeita. Seus ${LV.saldo()} créditos serão perdidos.</p>
+          <h2>Excluir sua conta?</h2>
+          <p>Não dá para desfazer. ${LV.saldo() > 0 ? `<strong>Seus ${LV.saldo()} créditos serão perdidos.</strong>` : ""}
+            Seu e-mail, apelido e mensagens do chat são apagados.</p>
+          ${window.SITE.modoDemo ? "" : `<div class="campo"><label for="excluir-senha">Sua senha</label><input id="excluir-senha" type="password" autocomplete="current-password"></div>`}
+          <div class="campo"><label for="excluir-confirma">Digite EXCLUIR para confirmar</label><input id="excluir-confirma" autocomplete="off" autocapitalize="characters"></div>
           <div class="acoes">
-            <button class="btn btn-bloco perigo" id="confirmar">Sim, excluir</button>
+            <button class="btn btn-bloco perigo" id="confirmar">Excluir minha conta</button>
             <button class="btn btn-bloco" data-fechar>Cancelar</button>
-          </div>`);
-        m.querySelector("#confirmar").addEventListener("click", () => {
-          if (!window.SITE.modoDemo) {
-            // A exclusão é feita pelo suporte (os pedidos pagos precisam ficar guardados).
-            location.href = `mailto:${window.SITE.emailSuporte}?subject=${encodeURIComponent("Excluir minha conta")}&body=${encodeURIComponent("E-mail da conta: " + u.email)}`;
+          </div>`, { largo: true });
+        m.querySelector("#confirmar").addEventListener("click", async () => {
+          const confirmacao = m.querySelector("#excluir-confirma").value.trim().toUpperCase();
+          if (confirmacao !== "EXCLUIR") return LV.toast("Digite EXCLUIR para confirmar.");
+          if (window.SITE.modoDemo) {
+            ["lv_usuario", "lv_extrato"].forEach((k) => { try { localStorage.removeItem(k); } catch {} });
+            location.href = "index.html";
             return;
           }
-          ["lv_usuario", "lv_extrato"].forEach((k) => { try { localStorage.removeItem(k); } catch {} });
-          location.href = "index.html";
+          const botao = m.querySelector("#confirmar");
+          botao.disabled = true;
+          try {
+            await LV.api("conta-excluir.php", { senha: m.querySelector("#excluir-senha").value, confirmacao });
+            await LV.sair(); // limpa o que ficou guardado neste navegador
+            location.href = "index.html";
+          } catch (err) {
+            botao.disabled = false;
+            LV.toast(err.message);
+          }
         });
       });
     }

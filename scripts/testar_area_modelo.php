@@ -972,6 +972,88 @@ verificar('conta da equipe desativada perde o acesso', $s, 401);
 [$s] = chamar('equipe-sair.php', 'POST');
 verificar('sair do painel da equipe', $s, 200);
 
+// ============================================================================= conta do cliente: trocar e-mail e excluir
+recomecar();
+$pdo = lv_db();
+$senhaCli = 'senha-do-cliente-1';
+foreach ([['ana@exemplo.com.br', 'ana_rj'], ['bia@exemplo.com.br', 'bia_sp']] as [$em, $ap]) {
+    $pdo->prepare('INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES (?, ?, ?, ?)')->execute([$em, $ap, password_hash($senhaCli, PASSWORD_DEFAULT), lv_agora()]);
+}
+[$ana, $bia] = array_map('intval', $pdo->query('SELECT id FROM lv_usuarios ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
+
+$_SESSION = [];
+[$s] = chamar('conta-email.php', 'POST', ['email_novo' => 'x@exemplo.com.br', 'senha' => $senhaCli]);
+verificar('trocar e-mail sem login: 401', $s, 401);
+$_SESSION = ['usuario_id' => $ana];
+[$s, $c] = chamar('conta-email.php', 'POST', ['email_novo' => 'ana.nova@exemplo.com.br', 'senha' => 'errada']);
+verificar('trocar e-mail com senha errada: 401 no campo senha', [$s, $c['campo'] ?? null], [401, 'senha']);
+[$s, $c] = chamar('conta-email.php', 'POST', ['email_novo' => 'ana@', 'senha' => $senhaCli]);
+verificar('e-mail inválido: 422', [$s, $c['campo'] ?? null], [422, 'email_novo']);
+[$s] = chamar('conta-email.php', 'POST', ['email_novo' => 'ANA@exemplo.com.br', 'senha' => $senhaCli]);
+verificar('o mesmo e-mail: 422', $s, 422);
+[$s, $c] = chamar('conta-email.php', 'POST', ['email_novo' => 'bia@exemplo.com.br', 'senha' => $senhaCli]);
+verificar('e-mail de outra conta: 409', [$s, $c['erro']], [409, 'Esse e-mail já é usado por outra conta.']);
+[$s, $c] = chamar('conta-email.php', 'POST', ['email_novo' => ' Ana.Nova@Exemplo.com.br ', 'senha' => $senhaCli]);
+verificar('trocar e-mail: 200 e devolve o novo', [$s, $c['usuario']['email']], [200, 'ana.nova@exemplo.com.br']);
+$_SESSION = [];
+[$s] = chamar('entrar.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => $senhaCli]);
+verificar('e-mail antigo não entra mais', $s, 401);
+[$s] = chamar('entrar.php', 'POST', ['email' => 'ana.nova@exemplo.com.br', 'senha' => $senhaCli]);
+verificar('e-mail novo entra', $s, 200);
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro'");
+$_SESSION = ['usuario_id' => $ana];
+for ($i = 0; $i < LV_ERROS_LOGIN; $i++) { chamar('conta-email.php', 'POST', ['email_novo' => "z$i@exemplo.com.br", 'senha' => 'chute']); }
+[$s] = chamar('conta-email.php', 'POST', ['email_novo' => 'z@exemplo.com.br', 'senha' => $senhaCli]);
+verificar('chutes de senha ao trocar e-mail: espera', $s, 429);
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro'");
+
+// Excluir
+lv_lancar($ana, 300, 'compra', null, 'Pacote');
+lv_lancar($ana, -20, 'gorjeta', null, 'Gorjeta', 'livia-voguel');
+$msgAna = lv_chat_postar('livia-voguel', $ana, 'ana_rj', 'msg', 'meu zap é 21 99999-0000');
+lv_chat_postar('livia-voguel', $ana, 'ana_rj', 'gorjeta', 'linda', 20);
+lv_chat_postar('livia-voguel', $bia, 'bia_sp', 'msg', 'oi');
+$pdo->prepare('INSERT INTO lv_chat_bloqueios (slug, usuario_id, criado_em) VALUES (?, ?, ?)')->execute(['livia-voguel', $ana, lv_agora()]);
+lv_registrar('login_erro', 'e:ana.nova@exemplo.com.br');
+$pdo->prepare("INSERT INTO lv_pedidos (codigo, usuario_id, pacote, creditos, valor_centavos, metodo, status, criado_em, atualizado_em) VALUES ('p1', ?, 0, 50, 1990, 'pix', 'pendente', ?, ?)")
+    ->execute([$ana, lv_agora(), lv_agora()]);
+
+$_SESSION = ['usuario_id' => $ana];
+[$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'excluir']);
+verificar('excluir sem digitar EXCLUIR: 422', [$s, $c['campo'] ?? null], [422, 'confirmacao']);
+[$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => 'errada', 'confirmacao' => 'EXCLUIR']);
+verificar('excluir com senha errada: 401', [$s, $c['campo'] ?? null], [401, 'senha']);
+[$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'EXCLUIR']);
+verificar('excluir com pagamento pendente: 409', $s, 409);
+$pdo->exec("UPDATE lv_pedidos SET status = 'expirado'");
+[$s, $c] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'EXCLUIR']);
+verificar('excluir: 200 e sai da conta', [$s, $_SESSION], [200, []]);
+
+$u = $pdo->query("SELECT email, apelido FROM lv_usuarios WHERE id = $ana")->fetch();
+verificar('e-mail e apelido viram anônimos', [$u['email'], $u['apelido']], ["excluida-$ana@conta-excluida.invalid", "excluida_$ana"]);
+$_SESSION = [];
+[$s] = chamar('entrar.php', 'POST', ['email' => 'ana.nova@exemplo.com.br', 'senha' => $senhaCli]);
+verificar('conta excluída não entra mais', $s, 401);
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro' AND chave = 'e:ana.nova@exemplo.com.br'");
+$todo = json_encode([$pdo->query('SELECT * FROM lv_usuarios')->fetchAll(), $pdo->query('SELECT * FROM lv_chat')->fetchAll(),
+    $pdo->query('SELECT * FROM lv_eventos')->fetchAll(), $pdo->query('SELECT * FROM lv_extrato')->fetchAll()], JSON_UNESCAPED_UNICODE);
+verificar('nenhum dado pessoal fica no banco (e-mail, apelido, texto do chat)',
+    [str_contains($todo, 'ana.nova@'), str_contains($todo, 'ana@exemplo'), str_contains($todo, 'ana_rj'), str_contains($todo, '99999-0000'), str_contains($todo, 'linda')],
+    [false, false, false, false, false]);
+$_GET = ['modelo' => 'livia-voguel'];
+[, $c] = chamar('chat.php');
+$_GET = [];
+verificar('mensagem dela some da sala; a gorjeta fica sem nome nem recado', [array_map(static fn($m) => [$m['tipo'], $m['apelido'], $m['texto']], $c['mensagens']), in_array($msgAna, $c['apagadas'], true)],
+    [[['gorjeta', 'conta excluída', ''], ['msg', 'bia_sp', 'oi']], true]);
+verificar('extrato e pedidos ficam (registro financeiro)', [(int) $pdo->query("SELECT COUNT(*) FROM lv_extrato WHERE usuario_id = $ana")->fetchColumn(), (int) $pdo->query("SELECT COUNT(*) FROM lv_pedidos WHERE usuario_id = $ana")->fetchColumn()], [2, 1]);
+verificar('ganhos da modelo continuam certos', lv_modelo_soma('livia-voguel')['creditos'], 20);
+verificar('bloqueio no chat dela some', (int) $pdo->query("SELECT COUNT(*) FROM lv_chat_bloqueios WHERE usuario_id = $ana")->fetchColumn(), 0);
+$_SESSION = ['usuario_id' => $bia];
+[, $c] = chamar('eu.php');
+verificar('a outra conta não é afetada', $c['usuario']['email'], 'bia@exemplo.com.br');
+[$s] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'EXCLUIR'], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('excluir vindo de outro site: 403', $s, 403);
+
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
 $js = preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', (string) file_get_contents($raiz . '/assets/js/modelos.js'));

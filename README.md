@@ -55,7 +55,7 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 
 1. **Transmissão ao vivo:** contratar um serviço de streaming que aceite conteúdo adulto e
    colar o link do player no campo `streamUrl`. A modelo transmite pelo OBS (RTMP).
-2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
+2. **Excluir conta e trocar e-mail:** feitos pelo próprio site, em "Minha conta → Meus dados" (veja "Conta do cliente" no fim).
 3. **Chat em tempo real:** feito, com moderação pela modelo (veja "Chat das salas" no fim).
 4. **Status online automático:** hoje o campo `online` é manual.
 5. **Painel da modelo:** login, ganhos, saques, botão "ao vivo", perfil, fotos e "Configurar sala" já vêm do servidor.
@@ -294,4 +294,18 @@ precisa de 12 caracteres ou mais; o script imprime o `INSERT` para colar no phpM
 `UPDATE lv_equipe_contas SET ativa = 0 WHERE email = '...';`. Tabela `lv_equipe_contas` em `api/schema-modelos.sql`.
 
 Endpoints: `api/equipe-entrar.php`, `api/equipe-eu.php`, `api/equipe-sair.php` e `api/equipe.php`.
+
+## Conta do cliente: trocar e-mail e excluir
+
+Em **Minha conta → Meus dados**:
+
+- **Trocar e-mail** (`POST api/conta-email.php { email_novo, senha }`): pede a senha atual (com o mesmo freio de tentativas
+  da troca de senha) e um e-mail que nenhuma outra conta use. O novo vale para o login na hora.
+- **Excluir conta** (`POST api/conta-excluir.php { senha, confirmacao: "EXCLUIR" }`): pede a senha e que a pessoa digite
+  EXCLUIR. Os dados pessoais saem: e-mail e apelido viram `excluida-<id>@conta-excluida.invalid` e `excluida_<id>`, a senha
+  deixa de funcionar, as mensagens no chat perdem o texto e somem das salas (os avisos de gorjeta ficam como
+  "conta excluída", sem recado), saem os bloqueios no chat e os registros de tentativa de login com o e-mail. **Pedidos
+  e extrato ficam**, sem dado pessoal, porque são registro financeiro; os ganhos das modelos não mudam. Créditos não
+  usados são perdidos (o aviso mostra quantos). Com um pagamento ainda pendente, a exclusão espera, para os créditos
+  não caírem numa conta excluída. A sessão é encerrada.
 
