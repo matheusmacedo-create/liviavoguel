@@ -27,9 +27,10 @@ if (lv_contar_eventos('cadastro', lv_ip(), 3600) >= 10) {
     lv_falhar(429, 'Muitos cadastros seguidos. Tente mais tarde.');
 }
 lv_registrar('cadastro', lv_ip());
+$senhaHash = password_hash($senha, PASSWORD_DEFAULT);
 try {
     lv_db()->prepare('INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES (?, ?, ?, ?)')
-        ->execute([$email, $apelido, password_hash($senha, PASSWORD_DEFAULT), lv_agora()]);
+        ->execute([$email, $apelido, $senhaHash, lv_agora()]);
 } catch (PDOException $e) {
     if (!lv_e_duplicado($e)) {
         throw $e;
@@ -37,5 +38,5 @@ try {
     lv_falhar(409, 'Este e-mail já tem conta. Entre com sua senha.', ['campo' => 'email']);
 }
 $id = (int) lv_db()->lastInsertId();
-lv_logar($id);
+lv_logar($id, $senhaHash);
 lv_json(lv_estado($id) + ['email' => $email], 201);

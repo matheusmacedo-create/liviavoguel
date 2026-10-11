@@ -22,9 +22,10 @@ if (mb_strlen($nova) < LV_SENHA_MINIMA || mb_strlen($nova) > 200) {
 if (hash_equals($atual, $nova)) {
     lv_falhar(400, 'A nova senha precisa ser diferente da atual.', ['campo' => 'senha_nova']);
 }
-lv_db()->prepare('UPDATE lv_modelos_contas SET senha_hash = ? WHERE id = ?')
-    ->execute([password_hash($nova, PASSWORD_DEFAULT), (int) $conta['id']]);
+$novoHash = password_hash($nova, PASSWORD_DEFAULT);
+lv_db()->prepare('UPDATE lv_modelos_contas SET senha_hash = ? WHERE id = ?')->execute([$novoHash, (int) $conta['id']]);
 lv_registrar('modelo_senha', 'm:' . $conta['id'], lv_ip());
-// Troca o id da sessão: quem tivesse a sessão antiga (ex.: computador emprestado) perde o acesso.
-lv_modelo_logar((int) $conta['id']);
+// Esta sessão continua (com a marca da senha nova); as outras, abertas com a senha antiga
+// (ex.: computador emprestado, cookie roubado), deixam de valer na próxima requisição.
+lv_modelo_logar((int) $conta['id'], $novoHash);
 lv_json(['ok' => true]);

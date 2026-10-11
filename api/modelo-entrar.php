@@ -30,10 +30,12 @@ if (!$conta || !$senhaOk || !(int) $conta['ativa']) {
 }
 
 $id = (int) $conta['id'];
-if (password_needs_rehash((string) $conta['senha_hash'], PASSWORD_DEFAULT)) {
-    lv_db()->prepare('UPDATE lv_modelos_contas SET senha_hash = ? WHERE id = ?')->execute([password_hash($senha, PASSWORD_DEFAULT), $id]);
+$senhaHash = (string) $conta['senha_hash'];
+if (password_needs_rehash($senhaHash, PASSWORD_DEFAULT)) {
+    $senhaHash = password_hash($senha, PASSWORD_DEFAULT);
+    lv_db()->prepare('UPDATE lv_modelos_contas SET senha_hash = ? WHERE id = ?')->execute([$senhaHash, $id]);
 }
 lv_db()->prepare('UPDATE lv_modelos_contas SET ultimo_login_em = ? WHERE id = ?')->execute([lv_agora(), $id]);
 lv_registrar('modelo_login', 'm:' . $id, lv_ip());
-lv_modelo_logar($id);
+lv_modelo_logar($id, $senhaHash);
 lv_json(['ok' => true, 'modelo' => lv_modelo_publico($conta)]);

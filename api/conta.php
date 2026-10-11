@@ -30,6 +30,9 @@ if (array_key_exists('senha_nova', $b)) {
     if (strlen($nova) < LV_SENHA_MINIMA || strlen($nova) > 200) {
         lv_falhar(422, 'A nova senha precisa ter pelo menos ' . LV_SENHA_MINIMA . ' caracteres.', ['campo' => 'senha_nova']);
     }
-    lv_db()->prepare('UPDATE lv_usuarios SET senha_hash = ? WHERE id = ?')->execute([password_hash($nova, PASSWORD_DEFAULT), $usuarioId]);
+    $novoHash = password_hash($nova, PASSWORD_DEFAULT);
+    lv_db()->prepare('UPDATE lv_usuarios SET senha_hash = ? WHERE id = ?')->execute([$novoHash, $usuarioId]);
+    // Esta sessão continua; as outras (abertas com a senha antiga) caem na próxima requisição.
+    lv_logar($usuarioId, $novoHash);
 }
 lv_json(lv_estado($usuarioId));

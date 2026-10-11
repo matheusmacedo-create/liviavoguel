@@ -20,9 +20,17 @@ return [
     'MODELO_REPASSE_CENTAVOS' => '',
     // Saque mínimo da modelo, em centavos. 5000 = R$ 50,00. Vazio = 5000.
     'MODELO_SAQUE_MINIMO_CENTAVOS' => '',
+    // Dias que cada gorjeta ou minuto de privado espera antes de poder ser sacado (prazo para um pagamento com
+    // cartão ser contestado; estorno nesse prazo é descontado antes de o dinheiro sair). Vazio = 7. 0 = sem espera.
+    'MODELO_ESPERA_SAQUE_DIAS' => '',
 
-    // Só para a compra de teste: os e-mails desta lista pagam PRECO_TESTE_CENTAVOS em qualquer pacote
-    // (ex.: 100 = R$ 1,00). Todo outro visitante paga o preço real. Volte para '' e [] depois do teste.
+    // Show privado pelo servidor. Deixe false: ainda não existe o fluxo em que a modelo recebe o pedido e aceita,
+    // então o site recusa cobrar minutos de privado (api/gastar.php) e a sala esconde o botão.
+    'PRIVADO_ATIVO' => false,
+
+    // Só para a compra de teste: as contas desta lista (o id em lv_usuarios, veja no phpMyAdmin) pagam
+    // PRECO_TESTE_CENTAVOS em qualquer pacote (ex.: 100 = R$ 1,00). Todo outro visitante paga o preço real.
+    // Volte para '' e [] depois do teste.
     'PRECO_TESTE_CENTAVOS' => '',
-    'TESTE_EMAILS' => [],
+    'TESTE_USUARIOS' => [],
 ];

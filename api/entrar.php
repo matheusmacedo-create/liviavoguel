@@ -18,8 +18,10 @@ if (!$u || !password_verify($senha, (string) $u['senha_hash'])) {
     lv_registrar('login_erro', 'ip:' . lv_ip());
     lv_falhar(401, 'E-mail ou senha incorretos.');
 }
-if (password_needs_rehash((string) $u['senha_hash'], PASSWORD_DEFAULT)) {
-    lv_db()->prepare('UPDATE lv_usuarios SET senha_hash = ? WHERE id = ?')->execute([password_hash($senha, PASSWORD_DEFAULT), $u['id']]);
+$senhaHash = (string) $u['senha_hash'];
+if (password_needs_rehash($senhaHash, PASSWORD_DEFAULT)) {
+    $senhaHash = password_hash($senha, PASSWORD_DEFAULT);
+    lv_db()->prepare('UPDATE lv_usuarios SET senha_hash = ? WHERE id = ?')->execute([$senhaHash, $u['id']]);
 }
-lv_logar((int) $u['id']);
+lv_logar((int) $u['id'], $senhaHash);
 lv_json(lv_estado((int) $u['id']) + ['email' => $email]);

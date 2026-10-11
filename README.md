@@ -150,14 +150,30 @@ do mesmo jeito.
 
 ### Compra de teste de R$ 1,00
 
-1. Crie sua conta no site com o seu e-mail.
-2. No `config.php`, coloque `'PRECO_TESTE_CENTAVOS' => 100` e `'TESTE_EMAILS' => ['seu@email.com']`. Só esse e-mail
-   paga R$ 1,00. Qualquer outro visitante continua pagando o preço normal.
+1. Crie sua conta no site com o seu e-mail e veja o número dela no phpMyAdmin:
+   `SELECT id FROM lv_usuarios WHERE email = 'seu@email.com';`
+2. No `config.php`, coloque `'PRECO_TESTE_CENTAVOS' => 100` e `'TESTE_USUARIOS' => [<o id>]`. Só essa conta paga
+   R$ 1,00. Qualquer outro visitante continua pagando o preço normal. (É por número de conta, e não por e-mail, porque
+   o cadastro não confirma e-mail: qualquer pessoa poderia criar uma conta com um e-mail da lista.)
 3. Compre qualquer pacote por Pix e pague o QR Code. Em alguns segundos a tela mostra "pago" e o saldo sobe.
 4. Para conferir no phpMyAdmin: o pedido aparece em `lv_pedidos` com `status = pago`, e a tabela `lv_extrato` tem uma
    única linha `compra` para ele.
-5. Depois do teste, volte `PRECO_TESTE_CENTAVOS` para `''` e `TESTE_EMAILS` para `[]`. Se quiser, estorne o R$ 1,00 no
+5. Depois do teste, volte `PRECO_TESTE_CENTAVOS` para `''` e `TESTE_USUARIOS` para `[]`. Se quiser, estorne o R$ 1,00 no
    painel da Unicopag: o estorno também tira os créditos do saldo.
+
+### Proteções do pagamento
+
+- **O pedido é gravado antes da cobrança.** Se a Unicopag aprovar e a resposta se perder (queda, timeout), o aviso dela
+  acha o pedido pelo código que vai no `metadata` e credita do mesmo jeito.
+- **Só credita com o valor confirmado:** se a consulta da Unicopag vier sem o valor, ou com valor diferente do pedido,
+  não credita e registra em `lv_eventos` (`valor_divergente`) para a equipe olhar.
+- **Estorno e chargeback:** tiram os créditos do comprador (que pode ficar negativo e aí não gasta mais). O que ele já
+  tinha gastado sem dinheiro por trás é descontado do saque das modelos que receberam (`lv_modelos_estornos`).
+- **Espera antes do saque:** cada gorjeta ou minuto de privado só pode ser sacado 7 dias depois
+  (`MODELO_ESPERA_SAQUE_DIAS` no `config.php`), o prazo para um pagamento com cartão ser contestado.
+- **Show privado desligado:** o servidor não cobra minutos de privado sem `'PRIVADO_ATIVO' => true` no `config.php`, e
+  nunca com a modelo offline; a sala esconde o botão (`privadoAtivo` em `assets/js/config.js`). Fica assim até existir o
+  fluxo em que a modelo recebe o pedido e aceita.
 
 ### Testes (sem rede)
 
@@ -192,9 +208,12 @@ e a senha. O slug precisa existir em `api/lib/modelos.php`.
 - O acesso vence sozinho em 12 horas. Depois de 5 senhas erradas em 15 minutos, o login espera.
 
 **Saques:** na seção Ganhos, a modelo cadastra a chave Pix (CPF, e-mail, celular ou aleatória, conferida no servidor)
-e pede o saque de tudo o que está disponível (`api/modelo-saque.php`). Disponível = créditos recebidos menos os já
-pedidos (pendentes ou pagos), em reais pelo repasse atual; mínimo de R$ 50,00 (`MODELO_SAQUE_MINIMO_CENTAVOS` no
-`config.php`) e um pedido pendente por vez. A equipe faz o Pix e marca no phpMyAdmin:
+e pede o saque de tudo o que está disponível (`api/modelo-saque.php`). Disponível = créditos recebidos há mais de 7 dias
+(`MODELO_ESPERA_SAQUE_DIAS`), menos estornos descontados e os já pedidos (pendentes ou pagos), em reais pelo repasse
+atual; mínimo de R$ 50,00 (`MODELO_SAQUE_MINIMO_CENTAVOS` no `config.php`) e um pedido pendente por vez. Salvar ou trocar
+a chave Pix pede a senha do painel, e o saque só fica liberado 24 horas depois de cadastrar ou trocar a chave: com uma
+sessão roubada não dá para desviar o dinheiro. Trocar a senha (ou a equipe redefinir) derruba todas as outras sessões
+abertas da conta; o mesmo vale para os clientes. A equipe faz o Pix e marca no phpMyAdmin:
 
 ```sql
 UPDATE lv_saques SET status = 'pago', pago_em = UTC_TIMESTAMP() WHERE id = 123;
