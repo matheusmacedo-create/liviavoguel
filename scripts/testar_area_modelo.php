@@ -25,6 +25,7 @@ require $raiz . '/api/lib/modelo-conta.php';
 require $raiz . '/api/lib/chat.php';
 require $raiz . '/api/lib/saques.php';
 require $raiz . '/api/lib/fotos.php';
+require $raiz . '/api/lib/stream.php';
 require $raiz . '/api/lib/equipe.php';
 
 $falhas = 0;
@@ -1053,6 +1054,74 @@ $_SESSION = sessao_cliente($bia);
 verificar('a outra conta não é afetada', $c['usuario']['email'], 'bia@exemplo.com.br');
 [$s] = chamar('conta-excluir.php', 'POST', ['senha' => $senhaCli, 'confirmacao' => 'EXCLUIR'], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
 verificar('excluir vindo de outro site: 403', $s, 403);
+
+// ============================================================================= transmissão (HLS + OBS)
+recomecar();
+$idLivia = criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$pdo = lv_db();
+$pdo->prepare('INSERT INTO lv_equipe_contas (email, senha_hash, ativa, criado_em) VALUES (?, ?, 1, ?)')
+    ->execute(['equipe@exemplo.com.br', password_hash('senha-da-equipe-123', PASSWORD_DEFAULT), lv_agora()]);
+$pdo->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES ('fa@exemplo.com.br', 'fa_1', 'x', '2026-01-01 00:00:00')");
+$fa = (int) $pdo->lastInsertId();
+$streamOk = ['hls_url' => 'https://video.exemplo.com/live/livia/index.m3u8', 'rtmp_servidor' => 'rtmps://ingest.exemplo.com:443/live', 'rtmp_chave' => 'sk_live_SEGREDO123'];
+$_GET = [];
+
+$_SESSION = [];
+chamar('equipe-entrar.php', 'POST', ['email' => 'equipe@exemplo.com.br', 'senha' => 'senha-da-equipe-123']);
+$sessaoEquipe = $_SESSION;
+$errosStream = [
+    'link http' => [['hls_url' => 'http://video.exemplo.com/a.m3u8'], 'hls_url'],
+    'link sem .m3u8' => [['hls_url' => 'https://video.exemplo.com/live'], 'hls_url'],
+    'link javascript' => [['hls_url' => 'javascript:alert(1)//.m3u8'], 'hls_url'],
+    'servidor https' => [['rtmp_servidor' => 'https://ingest.exemplo.com/live'], 'rtmp_servidor'],
+    'chave com espaço' => [['rtmp_chave' => 'abc def'], 'rtmp_chave'],
+    'chave vazia' => [['rtmp_chave' => ''], 'rtmp_chave'],
+];
+foreach ($errosStream as $nome => [$troca, $campo]) {
+    [$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'stream_salvar', 'id' => $idLivia] + $troca + $streamOk);
+    verificar("transmissão inválida ($nome): 422 no campo $campo", [$s, $c['campo'] ?? null], [422, $campo]);
+}
+[$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'stream_salvar', 'id' => $idLivia] + $streamOk);
+verificar('equipe salva a transmissão', [$s, $c['modelos'][0]['stream']['hls_url']], [200, $streamOk['hls_url']]);
+[$s] = chamar('equipe.php', 'POST', ['acao' => 'stream_salvar', 'id' => 99999] + $streamOk);
+verificar('transmissão de modelo que não existe: 404', $s, 404);
+
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s, $c] = chamar('modelo-transmitir.php');
+verificar('modelo vê o servidor e a chave do OBS', [$s, $c['configurada'], $c['rtmp_servidor'], $c['rtmp_chave']], [200, true, $streamOk['rtmp_servidor'], 'sk_live_SEGREDO123']);
+$_SESSION = [];
+lv_logar($fa, 'x');
+[$s] = chamar('modelo-transmitir.php');
+verificar('cliente não vê a chave do OBS: 401', $s, 401);
+
+$_SESSION = [];
+$_GET = ['modelo' => 'livia-voguel'];
+[$s] = chamar('stream.php');
+verificar('link do vídeo sem login: 401', $s, 401);
+$_SESSION = [];
+lv_logar($fa, 'x');
+[$s, $c] = chamar('stream.php');
+verificar('modelo offline: sem link', [$s, $c['online'], $c['hls_url']], [200, false, null]);
+lv_ao_vivo_definir('livia-voguel', true);
+[$s, $c] = chamar('stream.php');
+verificar('modelo ao vivo: cliente recebe o link (e só ele)', [$s, $c['online'], $c['hls_url'], array_keys($c)], [200, true, $streamOk['hls_url'], ['ok', 'online', 'hls_url']]);
+$_GET = ['modelo' => 'nao-existe'];
+[$s] = chamar('stream.php');
+verificar('modelo que não existe: 422', $s, 422);
+$_GET = [];
+$publicos = json_encode([chamar('ao-vivo.php')[1], chamar('perfis.php')[1], chamar('salas.php')[1]]);
+verificar('chave do OBS fora dos endpoints públicos', str_contains($publicos, 'SEGREDO123'), false);
+
+$_SESSION = $sessaoEquipe;
+[$s, $c] = chamar('equipe.php', 'POST', ['acao' => 'stream_salvar', 'id' => $idLivia, 'hls_url' => '', 'rtmp_servidor' => '', 'rtmp_chave' => '']);
+verificar('tudo vazio apaga a transmissão', [$s, $c['modelos'][0]['stream']], [200, null]);
+$_SESSION = [];
+lv_logar($fa, 'x');
+$_GET = ['modelo' => 'livia-voguel'];
+[, $c] = chamar('stream.php');
+$_GET = [];
+verificar('ao vivo sem transmissão configurada: sem link', [$c['online'], $c['hls_url']], [true, null]);
 
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.

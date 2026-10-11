@@ -145,3 +145,14 @@ CREATE TABLE IF NOT EXISTS lv_equipe_contas (
   ultimo_login_em DATETIME NULL,
   UNIQUE KEY uq_equipe_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Transmissão de cada modelo, preenchida pela equipe (equipe.html) com os dados do serviço de vídeo (ou do servidor
+-- próprio). hls_url = link .m3u8 que a sala toca; rtmp_servidor e rtmp_chave = o que a modelo cola no OBS.
+-- A chave é segredo: só aparece para a própria modelo e para a equipe, nunca para quem assiste.
+CREATE TABLE IF NOT EXISTS lv_modelos_stream (
+  slug VARCHAR(40) NOT NULL PRIMARY KEY,
+  hls_url VARCHAR(255) NOT NULL,
+  rtmp_servidor VARCHAR(255) NOT NULL,
+  rtmp_chave VARCHAR(255) NOT NULL,
+  atualizado_em DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

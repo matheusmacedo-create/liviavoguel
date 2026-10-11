@@ -21,6 +21,7 @@
   <script src="assets/js/perfis.js"></script>
   <script src="assets/js/salas.js"></script>
   <script src="assets/js/app.js"></script>
+  <script src="assets/js/video.js"></script>
   <script>
     LV.montar("sala");
     const { esc, toast } = LV;
@@ -37,9 +38,19 @@
     const metaAtual = () => (S.modoDemo ? Number(LV.ler(chaveMeta, 0)) : m.meta?.atual ?? 0);
     const boasVindas = () => m.boasVindas || `Bem-vindo(a) à sala de ${m.nome}! Seja respeitoso(a) 💜`;
 
+    // Fora do modo demonstração, o vídeo vem do link HLS que a equipe configurou (api/stream.php), tocado por
+    // assets/js/video.js. No modo demonstração vale o streamUrl (iframe) de modelos.js, se houver.
+    const videoReal = () => !S.modoDemo && m.online && LV.usuario();
+    let tocador = null;
     function player() {
-      if (m.online && m.streamUrl && LV.usuario()) {
+      if (S.modoDemo && m.online && m.streamUrl && LV.usuario()) {
         return `<iframe src="${esc(m.streamUrl)}" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+      }
+      if (videoReal()) {
+        return `<video id="video" playsinline autoplay muted controls></video>
+          <div class="player-capa" id="video-capa"><img src="${esc(m.foto)}" alt=""></div>
+          <div class="player-msg" id="video-msg"><div><span class="girando" style="display:inline-block"></span>
+            <p style="margin-top:10px">Conectando à transmissão de ${esc(m.nome)}...</p></div></div>`;
       }
       let msg;
       if (!m.online) {
@@ -52,6 +63,31 @@
         msg = `<h3>${esc(m.nome)} está ao vivo</h3><p>A transmissão aparece aqui assim que o player for conectado.</p>`;
       }
       return `<div class="player-capa"><img src="${esc(m.foto)}" alt=""></div><div class="player-msg"><div>${msg}</div></div>`;
+    }
+
+    // Busca o link e liga o vídeo. O link só vem com login e a modelo ao vivo; sem transmissão configurada, avisa.
+    async function iniciarVideo() {
+      if (tocador) { tocador.parar(); tocador = null; }
+      if (!videoReal() || !$("video")) return;
+      const aviso = (texto) => {
+        const caixa = $("video-msg"); if (!caixa) return;
+        caixa.hidden = !texto; $("video-capa").hidden = !texto;
+        if (texto) caixa.innerHTML = `<div><h3>${esc(m.nome)} está ao vivo</h3><p>${esc(texto)}</p></div>`;
+      };
+      let r;
+      try { r = await LV.api(`stream.php?modelo=${encodeURIComponent(m.slug)}`); } catch { return aviso("Não deu para conectar agora. Recarregue a página."); }
+      if (!r.hls_url) return aviso("A transmissão começa em instantes.");
+      tocador = LVVideo.tocar($("video"), r.hls_url, {
+        aoMudar: (estado) => {
+          if (estado === "tocando") aviso("");
+          if (estado === "esperando") aviso("A transmissão começa em instantes. Tentando de novo...");
+        }
+      });
+    }
+    function montarPlayer() {
+      if (tocador) { tocador.parar(); tocador = null; }
+      $("player").innerHTML = player();
+      iniciarVideo();
     }
 
     $("sala").innerHTML = `
@@ -97,6 +133,7 @@
           <button class="btn btn-primario btn-pequeno">Enviar</button>
         </form>
       </aside>`;
+    iniciarVideo();
 
     const u = LV.usuario();
     if (u) $("quem").textContent = "você é " + u.apelido;
@@ -341,7 +378,7 @@
       $("selo-ao-vivo").className = m.online ? "badge-online" : "badge-offline";
       $("selo-ao-vivo").textContent = m.online ? "Ao vivo" : "Offline";
       if (privado && !m.online) privado.encerrar(`${m.nome} saiu do ar. O show privado foi encerrado.`);
-      if (!privado) $("player").innerHTML = player();
+      if (!privado) montarPlayer();
     });
 
     // Perfil salvo pela modelo no painel: atualiza nome, cidade e a aba aberta.
@@ -350,7 +387,7 @@
       $("sala-nome").textContent = m.nome;
       $("sala-local").textContent = `${m.idade} anos · ${m.cidade}`;
       $("sala-avatar").src = m.foto;
-      if (!privado) $("player").innerHTML = player(); // a capa do player usa a foto
+      if (!privado && !tocador) montarPlayer(); // a capa do player usa a foto (com o vídeo tocando, não interrompe)
       abrirAba(document.querySelector("#abas button.ativo")?.dataset.aba || "sobre");
     });
 

@@ -65,7 +65,9 @@
           <td>${!m.ativa ? `<span style="color:#ff7a90;font-weight:600">Bloqueada</span>` : m.online ? `<span class="badge-online">Ao vivo</span>` : `<span style="color:var(--texto-2)">Ativa</span>`}</td>
           <td style="text-align:right;white-space:nowrap">${dinheiro(m.disponivel.centavos)}</td>
           <td class="col-opcional">${hora(m.ultimo_login)}</td>
-          <td style="text-align:right">${m.ativa
+          <td style="text-align:right;white-space:nowrap">
+            <button class="btn btn-pequeno" data-stream="${m.id}">${m.stream ? "📡 Transmissão" : "Configurar transmissão"}</button>
+            ${m.ativa
             ? `<button class="btn btn-pequeno perigo" data-bloquear="${m.id}" data-nome="${esc(m.nome)}">Bloquear</button>`
             : `<button class="btn btn-pequeno" data-reativar="${m.id}">Reativar</button>`}</td></tr>`).join("")}</tbody></table></div>`
         : `<div class="vazio">Nenhuma conta de modelo. Crie com <code>php scripts/criar_conta_modelo.php</code>.</div>`;
@@ -145,6 +147,38 @@
           <div class="acoes"><button class="btn btn-bloco perigo" id="confirmar">Bloquear</button>
             <button class="btn btn-bloco" data-fechar>Cancelar</button></div>`);
         md.querySelector("#confirmar").addEventListener("click", () => { md.fechar(); agir({ acao: "modelo_bloquear", id: Number(bloquear.dataset.bloquear) }, "Modelo bloqueada."); });
+      }
+      const stream = e.target.closest("[data-stream]");
+      if (stream) {
+        const m = dados.modelos.find((x) => x.id === Number(stream.dataset.stream));
+        const c = m.stream || { hls_url: "", rtmp_servidor: "", rtmp_chave: "" };
+        const md = LV.modal(`
+          <div class="modal-icone">📡</div>
+          <h2>Transmissão de ${esc(m.nome)}</h2>
+          <p>Copie do serviço de vídeo (ou do servidor próprio). O link do player vai para a sala; o servidor e a chave aparecem só no painel dela, para colar no OBS.</p>
+          <div class="campo"><label for="st-hls">Link do player (HLS)</label><input id="st-hls" maxlength="255" placeholder="https://…/index.m3u8" value="${esc(c.hls_url)}"></div>
+          <div class="campo"><label for="st-servidor">Servidor do OBS (RTMP)</label><input id="st-servidor" maxlength="255" placeholder="rtmps://…/live" value="${esc(c.rtmp_servidor)}"></div>
+          <div class="campo"><label for="st-chave">Chave de transmissão</label><input id="st-chave" maxlength="255" autocomplete="off" value="${esc(c.rtmp_chave)}">
+            <span class="ajuda">Segredo: quem tem a chave transmite na sala dela. Deixe os três vazios para desligar.</span></div>
+          <div class="acoes"><button class="btn btn-primario btn-bloco" id="confirmar">Salvar</button>
+            <button class="btn btn-bloco" data-fechar>Cancelar</button></div>`, { largo: true });
+        md.querySelector("#confirmar").addEventListener("click", async () => {
+          const botao = md.querySelector("#confirmar");
+          botao.disabled = true;
+          try {
+            dados = await LV.api("equipe.php", { acao: "stream_salvar", id: m.id,
+              hls_url: md.querySelector("#st-hls").value, rtmp_servidor: md.querySelector("#st-servidor").value, rtmp_chave: md.querySelector("#st-chave").value });
+            md.fechar();
+            desenhar();
+            LV.toast("Transmissão salva.");
+          } catch (err) {
+            botao.disabled = false;
+            if (err.status === 401) return location.replace("equipe-entrar.html");
+            LV.toast(err.message);
+            const campo = { hls_url: "#st-hls", rtmp_servidor: "#st-servidor", rtmp_chave: "#st-chave" }[err.campo];
+            if (campo) md.querySelector(campo).focus();
+          }
+        });
       }
       const reativar = e.target.closest("[data-reativar]");
       if (reativar) agir({ acao: "modelo_reativar", id: Number(reativar.dataset.reativar) }, "Modelo reativada.");
