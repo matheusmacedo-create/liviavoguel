@@ -106,7 +106,8 @@
 
   /**
    * Lança no extrato. Demo: grava no navegador. Real: só gastos (valor negativo), com
-   * gasto = { tipo: "gorjeta"|"privado", modelo: slug }; o débito é feito no servidor.
+   * gasto = { tipo: "gorjeta"|"privado", modelo: slug, recado? }; o débito é feito no servidor
+   * (e a gorjeta, com o recado, entra no chat da sala).
    * A tela já mostra o saldo novo e, se o servidor recusar, volta ao saldo real.
    * Devolve uma Promise que resolve com o saldo (ou rejeita com o erro).
    */
@@ -123,7 +124,7 @@
     e.saldo += valor;
     e.extrato.unshift({ valor, descricao, data: new Date().toISOString() });
     guardarEstado(e);
-    return api("gastar.php", { tipo: gasto.tipo, modelo: gasto.modelo, creditos: -valor })
+    return api("gastar.php", { tipo: gasto.tipo, modelo: gasto.modelo, creditos: -valor, ...(gasto.recado ? { recado: gasto.recado } : {}) })
       .then((r) => { sincronizar(); return r.saldo; })
       .catch((err) => {
         toast(err.status === 402 ? "Créditos insuficientes." : err.message);

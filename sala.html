@@ -138,11 +138,45 @@
     abrirAba("sobre");
 
     // ---------- Chat ----------
-    // Por enquanto local (só no seu navegador). Depois é ligado a um servidor em tempo real.
+    // Fora do modo demonstração, o chat é do servidor (api/chat.php): todos na sala veem as mesmas
+    // mensagens, buscadas a cada 3 s enquanto a aba está visível. No modo demonstração, fica só neste navegador.
     const msgs = $("msgs");
+    const vistas = new Set();
+    let ultimoId = 0;
     function postar(html, classe = "") {
+      const noFim = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60; // quem rolou para ler não é puxado
       msgs.insertAdjacentHTML("beforeend", `<div class="msg ${classe}">${html}</div>`);
-      msgs.scrollTop = msgs.scrollHeight;
+      if (noFim) msgs.scrollTop = msgs.scrollHeight;
+    }
+    function mostrar(msg) {
+      if (vistas.has(msg.id)) return;
+      vistas.add(msg.id);
+      ultimoId = Math.max(ultimoId, msg.id);
+      if (msg.tipo === "gorjeta") {
+        postar(`💸 <b>${esc(msg.apelido)}</b> mandou ${Number(msg.creditos)} créditos${msg.texto ? `: “${esc(msg.texto)}”` : "!"}`, "gorjeta");
+      } else {
+        postar(`<b>${esc(msg.apelido)}:</b>${esc(msg.texto)}`);
+      }
+    }
+    // Tudo entra por aqui, em ordem de id: nada é mostrado "por fora", senão o marcador (ultimoId)
+    // passaria na frente de mensagens de outras pessoas que ainda não chegaram.
+    let buscando = false;
+    let deNovo = false;
+    async function buscarChat() {
+      if (S.modoDemo || document.hidden) return;
+      if (buscando) { deNovo = true; return; } // chegou pedido no meio de uma busca: faz outra logo depois
+      buscando = true;
+      try {
+        const r = await LV.api(`chat.php?modelo=${encodeURIComponent(m.slug)}&depois=${ultimoId}`);
+        r.mensagens.forEach(mostrar);
+      } catch {}
+      buscando = false;
+      if (deNovo) { deNovo = false; buscarChat(); }
+    }
+    if (!S.modoDemo) {
+      buscarChat();
+      setInterval(buscarChat, 3000);
+      document.addEventListener("visibilitychange", buscarChat);
     }
     $("chat-form").addEventListener("submit", (e) => {
       e.preventDefault();
@@ -151,19 +185,30 @@
       const texto = input.value.trim();
       if (!texto) return;
       if (LVSalas.palavraBloqueada(m, texto)) return toast(`${m.nome} bloqueou uma das palavras dessa mensagem.`);
-      postar(`<b>${esc(LV.usuario().apelido)}:</b>${esc(texto)}`);
-      input.value = "";
+      if (S.modoDemo) {
+        postar(`<b>${esc(LV.usuario().apelido)}:</b>${esc(texto)}`);
+        input.value = "";
+        return;
+      }
+      LV.api("chat-enviar.php", { modelo: m.slug, texto })
+        .then(() => { input.value = ""; buscarChat(); })
+        .catch((err) => {
+          if (err.status === 401) LV.sincronizar(); // sessão vencida: a página se ajusta
+          toast(err.message);
+        });
     });
 
     // ---------- Gorjetas ----------
     function darGorjeta(valor, recado) {
       if (LV.saldo() < valor) return LV.semCreditos(valor);
       // Fora do modo demonstração, o débito é feito no servidor (api/gastar.php); recusado, não aparece no chat.
-      LV.lancar(-valor, `Gorjeta para ${m.nome}`, { tipo: "gorjeta", modelo: m.slug }).then(() => {
+      LV.lancar(-valor, `Gorjeta para ${m.nome}`, { tipo: "gorjeta", modelo: m.slug, recado }).then(() => {
         if (S.modoDemo) LV.gravar(chaveMeta, metaAtual() + valor);
         else if (m.meta) m.meta.atual += valor; // o servidor confirma na próxima consulta
         atualizarMeta();
-        postar(`💸 <b>${esc(LV.usuario().apelido)}</b> mandou ${valor} créditos${recado ? `: “${esc(recado)}”` : "!"}`, "gorjeta");
+        // No servidor, a gorjeta entra no chat de todos (api/gastar.php); aqui só busca na hora.
+        if (S.modoDemo) postar(`💸 <b>${esc(LV.usuario().apelido)}</b> mandou ${valor} créditos${recado ? `: “${esc(recado)}”` : "!"}`, "gorjeta");
+        else buscarChat();
         toast(`Gorjeta de ${valor} créditos enviada!`);
       }).catch(() => {});
     }

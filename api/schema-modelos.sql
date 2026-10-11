@@ -50,3 +50,18 @@ CREATE TABLE IF NOT EXISTS lv_modelos_sala (
   bloqueadas TEXT NOT NULL,
   atualizado_em DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Chat das salas. Mensagens de quem assiste e avisos de gorjeta (com o recado), na ordem do id.
+-- O show privado não aparece aqui, por discrição.
+CREATE TABLE IF NOT EXISTS lv_chat (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  slug VARCHAR(40) NOT NULL,
+  usuario_id INT UNSIGNED NULL,
+  apelido VARCHAR(20) NOT NULL,
+  tipo VARCHAR(10) NOT NULL,                 -- msg | gorjeta
+  texto VARCHAR(255) NOT NULL,
+  creditos INT UNSIGNED NULL,                -- valor da gorjeta
+  criado_em DATETIME NOT NULL,
+  KEY ix_chat_sala (slug, id),
+  KEY ix_chat_usuario (usuario_id, criado_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -55,7 +55,7 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 1. **Transmissão ao vivo:** contratar um serviço de streaming que aceite conteúdo adulto e
    colar o link do player no campo `streamUrl`. A modelo transmite pelo OBS (RTMP).
 2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
-3. **Chat em tempo real:** hoje as mensagens ficam só no navegador de quem escreve.
+3. **Chat em tempo real:** feito (veja "Chat das salas" no fim); falta a modelo apagar mensagens e bloquear pessoas.
 4. **Status online automático:** hoje o campo `online` é manual.
 5. **Painel da modelo:** login, ganhos, botão "ao vivo", perfil e "Configurar sala" já vêm do servidor; faltam saques e fotos.
 
@@ -211,6 +211,18 @@ recusa mensagens e recados com palavra bloqueada (sem diferenciar maiúsculas ne
 Endpoints: `api/modelo-entrar.php`, `api/modelo-eu.php`, `api/modelo-sair.php`, `api/modelo-senha.php`,
 `api/modelo-ganhos.php`, `api/modelo-ao-vivo.php`, `api/modelo-perfil.php`, `api/modelo-sala.php` e os públicos
 `api/ao-vivo.php`, `api/perfis.php` e `api/salas.php`.
+
+## Chat das salas
+
+Fora do modo demonstração, o chat fica no servidor (tabela `lv_chat` em `api/schema-modelos.sql`): todos na sala veem
+as mesmas mensagens, buscadas a cada 3 segundos enquanto a aba está visível (`api/chat.php`, público, só leitura).
+
+- Escrever (`api/chat-enviar.php`) exige login e a modelo ao vivo. Mensagens de até 200 caracteres; as palavras
+  bloqueadas em "Configurar sala" são barradas também no servidor (sem diferenciar maiúsculas nem acentos).
+- Freio contra spam: uma mensagem a cada 2 segundos e no máximo 20 por minuto por pessoa.
+- Gorjetas aparecem no chat de todos com o recado (até 80 caracteres), lançadas pelo `api/gastar.php` junto com o
+  débito; recado com palavra bloqueada é recusado antes de debitar. O show privado não aparece no chat.
+- Cada pessoa aparece só pelo apelido.
 Todo endpoint novo da área da modelo (ganhos, perfil, status) deve começar com `lv_exigir_modelo()`.
 
 Testes: `php scripts/testar_area_modelo.php` (sem MySQL nem internet).
