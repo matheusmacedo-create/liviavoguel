@@ -61,6 +61,12 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 
 Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
 
+## Transmitir em vários sites ao mesmo tempo
+
+- **Fase 1:** `docs/fase1-guia-obs-multistream.md`, o guia do OBS para transmitir em vários sites de cam juntos.
+- **Fase 2:** `painel-multicam/`, programa de computador com o chat de todos os sites numa tela só e o ranking de
+  R$/min. Não faz parte do site e não precisa ir para a hospedagem. Veja `painel-multicam/README.md`.
+
 ## Cuidados legais
 
 - Guardar documento com foto e termo de consentimento assinado de cada modelo, com prova de que tem 18 anos ou mais.

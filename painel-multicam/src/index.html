@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self' file:">
+  <title>Painel Multicam</title>
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <header class="topo">
+    <div class="marca">Painel Multicam <span id="selo-demo" class="selo-demo" hidden>DEMONSTRAÇÃO</span></div>
+    <div class="topo-numeros">
+      <div><span class="rotulo">Sessão</span><strong id="tempo-sessao">00:00</strong></div>
+      <div><span class="rotulo">Total da sessão</span><strong id="total-sessao">R$ 0,00</strong></div>
+    </div>
+    <div class="topo-acoes">
+      <button id="btn-exportar" type="button">Exportar sessão (CSV)</button>
+      <button id="btn-zerar" type="button" class="secundario">Zerar sessão</button>
+    </div>
+  </header>
+
+  <section id="ranking" class="ranking" aria-label="Ranking dos sites"></section>
+
+  <main class="corpo">
+    <section class="feed-area" aria-label="Chat de todos os sites">
+      <div class="filtros">
+        <div class="grupo" role="group" aria-label="Filtro">
+          <button type="button" class="filtro ativo" data-filtro="tudo">Tudo</button>
+          <button type="button" class="filtro" data-filtro="gorjetas">Só gorjetas</button>
+          <button type="button" class="filtro" data-filtro="fas">Só quem já deu gorjeta</button>
+        </div>
+        <div id="chips-sites" class="grupo chips" aria-label="Mostrar ou esconder sites"></div>
+      </div>
+      <ol id="feed" class="feed"></ol>
+      <button id="btn-novas" type="button" class="btn-novas" hidden>Novas mensagens ↓</button>
+    </section>
+
+    <section class="abas-area" aria-label="Sites">
+      <nav id="barra-abas" class="barra-abas"></nav>
+      <div id="abas" class="abas"></div>
+    </section>
+  </main>
+
+  <div id="alertas" class="alertas" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
