@@ -57,7 +57,7 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
 3. **Chat em tempo real:** feito, com moderação pela modelo (veja "Chat das salas" no fim).
 4. **Status online automático:** hoje o campo `online` é manual.
-5. **Painel da modelo:** login, ganhos, saques, botão "ao vivo", perfil e "Configurar sala" já vêm do servidor; falta o envio de fotos.
+5. **Painel da modelo:** login, ganhos, saques, botão "ao vivo", perfil, fotos e "Configurar sala" já vêm do servidor.
 
 Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
 
@@ -213,7 +213,15 @@ A tabela fica em `api/schema-modelos.sql` (importar de novo é seguro: só cria 
 
 **Perfil:** em "Meu perfil", a modelo edita nome artístico, cidade, "Sobre mim", interesses (até 10) e idiomas
 (1 a 5). Salvo em `lv_modelos_perfil` (`api/modelo-perfil.php`), vale sobre `assets/js/modelos.js` na página inicial e
-na sala, que leem `api/perfis.php` por `assets/js/perfis.js`. Fotos ainda são trocadas em `assets/img/`.
+na sala, que leem `api/perfis.php` por `assets/js/perfis.js`.
+
+**Fotos:** em "Meu perfil", a modelo envia até 12 fotos (JPG, PNG ou WebP, até 5 MB, mínimo 300 px), escolhe a capa e
+apaga (`api/modelo-fotos.php`). O servidor confere o tipo pelo conteúdo e **regrava toda foto em JPG** (até 1600 px, na
+orientação certa, sem EXIF nem localização, com nome aleatório), o que também descarta qualquer código escondido no
+arquivo. Os arquivos ficam em `uploads/modelos/<slug>/`, fora do Git (o deploy da Hostinger não apaga arquivos que não
+estão no repositório); `uploads/.htaccess` impede listar a pasta e executar qualquer script nela. A capa aparece na
+página inicial, no avatar e no player da sala; as outras, na galeria. Lista em `lv_modelos_fotos`. Sem fotos enviadas,
+valem as de `assets/img/` indicadas em `modelos.js`.
 
 **Configurar sala:** a modelo define o preço do show privado (1 a 500 créditos por minuto), a meta de gorjetas
 (título e valor), a mensagem de boas-vindas do chat e até 30 palavras bloqueadas. Salvo em `lv_modelos_sala`

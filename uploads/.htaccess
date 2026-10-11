@@ -1,0 +1,10 @@
+# Fotos enviadas pelas modelos (api/modelo-fotos.php). Aqui só ficam imagens JPG regravadas pelo servidor;
+# mesmo assim, nada desta pasta é executado nem listado.
+Options -Indexes -ExecCGI
+<FilesMatch "\.(?i:php\d*|phtml|phar|pht|pl|py|cgi|sh|shtml|htaccess|html?|svg|js)$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Content-Security-Policy "default-src 'none'; img-src 'self'; sandbox"
+</IfModule>

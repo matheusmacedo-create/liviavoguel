@@ -106,3 +106,17 @@ CREATE TABLE IF NOT EXISTS lv_saques (
   pago_em DATETIME NULL,
   KEY ix_saques_modelo (slug, pedido_em)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Fotos que a modelo envia pelo painel. O arquivo fica em uploads/modelos/<slug>/<arquivo> (fora do Git; o deploy
+-- não apaga). Uma por modelo é a capa; as outras formam a galeria, na ordem de `ordem`.
+CREATE TABLE IF NOT EXISTS lv_modelos_fotos (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  slug VARCHAR(40) NOT NULL,
+  arquivo VARCHAR(80) NOT NULL,
+  capa TINYINT(1) NOT NULL DEFAULT 0,
+  ordem INT NOT NULL DEFAULT 0,
+  largura INT UNSIGNED NOT NULL,
+  altura INT UNSIGNED NOT NULL,
+  criado_em DATETIME NOT NULL,
+  KEY ix_fotos_modelo (slug, ordem)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

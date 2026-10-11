@@ -1,3 +1,7 @@
 # Segredos e dados do servidor: só existem na Hostinger.
 api/config.php
 *.bak
+
+# Fotos enviadas pelas modelos: só existem no servidor (o .htaccess da pasta vai no Git).
+uploads/*
+!uploads/.htaccess

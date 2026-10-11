@@ -57,7 +57,7 @@
     $("sala").innerHTML = `
       <section>
         <div class="sala-cabecalho">
-          <img class="avatar" src="${esc(m.foto)}" alt="">
+          <img class="avatar" id="sala-avatar" src="${esc(m.foto)}" alt="">
           <div>
             <h1 id="sala-nome">${esc(m.nome)}</h1>
             <small id="sala-local">${m.idade} anos · ${esc(m.cidade)}</small>
@@ -347,6 +347,8 @@
       document.title = `${m.nome} — Sala ao vivo`;
       $("sala-nome").textContent = m.nome;
       $("sala-local").textContent = `${m.idade} anos · ${m.cidade}`;
+      $("sala-avatar").src = m.foto;
+      if (!privado) $("player").innerHTML = player(); // a capa do player usa a foto
       abrirAba(document.querySelector("#abas button.ativo")?.dataset.aba || "sobre");
     });
 
