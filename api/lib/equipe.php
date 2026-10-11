@@ -26,7 +26,9 @@ function lv_equipe_logada(): ?array
         return null;
     }
     $conta = (is_int($desde) && time() - $desde <= LV_EQUIPE_SESSAO_MAXIMA) ? lv_equipe_conta($id) : null;
-    if (!$conta || !(int) $conta['ativa']) {
+    // Senha trocada ou redefinida desde este login (lv_marca_senha): a sessão não vale mais.
+    if (!$conta || !(int) $conta['ativa']
+        || !hash_equals(lv_marca_senha((string) $conta['senha_hash']), (string) ($_SESSION['equipe_marca'] ?? ''))) {
         lv_equipe_deslogar();
         return null;
     }
@@ -38,7 +40,7 @@ function lv_exigir_equipe(): array
     return lv_equipe_logada() ?? lv_falhar(401, 'Entre no painel da equipe para continuar.', ['login_equipe' => true]);
 }
 
-function lv_equipe_logar(int $id): void
+function lv_equipe_logar(int $id, string $senhaHash): void
 {
     lv_sessao();
     if (!defined('LV_TESTE')) {
@@ -46,12 +48,13 @@ function lv_equipe_logar(int $id): void
     }
     $_SESSION['equipe_id'] = $id;
     $_SESSION['equipe_desde'] = time();
+    $_SESSION['equipe_marca'] = lv_marca_senha($senhaHash);
 }
 
 function lv_equipe_deslogar(): void
 {
     lv_sessao();
-    unset($_SESSION['equipe_id'], $_SESSION['equipe_desde']);
+    unset($_SESSION['equipe_id'], $_SESSION['equipe_desde'], $_SESSION['equipe_marca']);
     if (!defined('LV_TESTE') && session_status() === PHP_SESSION_ACTIVE) {
         session_regenerate_id(true);
     }

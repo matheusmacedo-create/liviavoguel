@@ -9,6 +9,14 @@ require_once __DIR__ . '/creditos.php';
 
 /** Freios: cobranças por usuário por hora; erros de login por e-mail (e 3× isso por IP) na janela, em segundos. */
 const LV_COBRANCAS_POR_HORA = 15;
+/**
+ * Freio contra teste de cartões roubados: cartões recusados por conta (e 2× isso por IP) em 24 h, e tentativas de
+ * cartão por IP por hora. Passou disso, só Pix até o prazo vencer.
+ */
+const LV_CARTAO_RECUSAS_DIA = 5;
+const LV_CARTAO_POR_HORA_IP = 10;
+/** O e-mail sozinho só trava o login com este fator × o limite de erros (ver lv_login_tentar). */
+const LV_LOGIN_FATOR_EMAIL = 10;
 const LV_ERROS_LOGIN = 10;
 const LV_JANELA_LOGIN = 900;
 /** Tamanho mínimo da senha (cadastro.html e conta.html usam o mesmo). */
@@ -178,6 +186,52 @@ function lv_registrar(string $tipo, string $chave, ?string $detalhe = null): voi
         ->execute([$tipo, mb_substr($chave, 0, 190), $detalhe !== null ? mb_substr($detalhe, 0, 255) : null, lv_agora()]);
 }
 
+/** Hash de uma senha qualquer: compara mesmo quando o e-mail não existe, para o tempo de resposta não revelar quem tem conta. */
+function lv_hash_falso(): string
+{
+    static $hash = null;
+    return $hash ??= password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
+}
+
+/**
+ * Freio de login (cliente, modelo e equipe). Os erros contam pelo par e-mail+IP e pelo IP: quem chuta senhas de um IP
+ * só trava a si mesmo, e a dona da conta, em outro lugar, continua entrando. O e-mail sozinho só trava com
+ * LV_LOGIN_FATOR_EMAIL × mais erros (ataque espalhado por muitos IPs). Bloqueado, responde 429 sem registrar nada
+ * (insistir não piora a trava de ninguém). A tentativa é registrada ANTES de conferir a senha e contada de novo, então
+ * uma rajada em paralelo também esbarra no limite. Devolve os ids registrados, para lv_login_acertou apagar.
+ */
+function lv_login_tentar(string $tipo, string $email, int $limite): array
+{
+    $ip = lv_ip();
+    $porEmailIp = 'ei:' . $email . '|' . $ip;
+    $porIp = 'ip:' . $ip;
+    $porEmail = 'e:' . $email;
+    $travado = static fn(int $folga): bool => lv_contar_eventos($tipo, $porEmailIp, LV_JANELA_LOGIN) >= $limite + $folga
+        || lv_contar_eventos($tipo, $porIp, LV_JANELA_LOGIN) >= 3 * $limite + $folga;
+    if ($travado(0) || lv_contar_eventos($tipo, $porEmail, LV_JANELA_LOGIN) >= LV_LOGIN_FATOR_EMAIL * $limite) {
+        lv_falhar(429, 'Muitas tentativas. Aguarde 15 minutos e tente de novo.');
+    }
+    $ids = [];
+    foreach ([$porEmailIp, $porIp, $porEmail] as $chave) {
+        lv_registrar($tipo, $chave);
+        $ids[] = (int) lv_db()->lastInsertId();
+    }
+    if ($travado(1)) {
+        lv_falhar(429, 'Muitas tentativas. Aguarde 15 minutos e tente de novo.');
+    }
+    return $ids;
+}
+
+/** Senha certa: a tentativa não conta como erro, e os erros anteriores deste e-mail neste IP são esquecidos. */
+function lv_login_acertou(string $tipo, string $email, array $ids): void
+{
+    $pdo = lv_db();
+    if ($ids) {
+        $pdo->exec('DELETE FROM lv_eventos WHERE id IN (' . implode(',', array_map('intval', $ids)) . ')');
+    }
+    $pdo->prepare('DELETE FROM lv_eventos WHERE tipo = ? AND chave = ?')->execute([$tipo, 'ei:' . $email . '|' . lv_ip()]);
+}
+
 function lv_contar_eventos(string $tipo, string $chave, int $segundos): int
 {
     $stmt = lv_db()->prepare('SELECT COUNT(*) FROM lv_eventos WHERE tipo = ? AND chave = ? AND criado_em > ?');
@@ -261,6 +315,29 @@ function lv_apelido(mixed $valor): string
     return preg_match('/^\w{3,20}$/', $apelido) ? $apelido : '';
 }
 
+/**
+ * Apelido que imita uma modelo ou a equipe ("Livia_Voguel", "livia123", "suporte"): recusado no cadastro e na troca,
+ * para ninguém pedir Pix no chat "como a modelo". Compara só as letras, sem acento e sem maiúsculas.
+ */
+function lv_apelido_reservado(string $apelido): bool
+{
+    $letras = static fn(string $s): string => preg_replace('/[^a-z]/', '', strtolower((string) iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s))) ?? '';
+    $a = $letras($apelido);
+    foreach (['admin', 'suporte', 'equipe', 'oficial', 'moderador', 'moderacao', 'staff'] as $palavra) {
+        if (str_contains($a, $palavra)) {
+            return true;
+        }
+    }
+    foreach (LV_MODELOS as $slug => $m) {
+        $nome = (string) ($m['nome'] ?? '');
+        $primeiro = $letras((string) strtok($nome, ' '));
+        if (str_contains($a, $letras($slug)) || str_contains($a, $letras($nome)) || ($primeiro !== '' && $a === $primeiro)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function lv_cpf_valido(string $cpf): bool
 {
     $cpf = lv_digitos($cpf);
@@ -321,7 +398,10 @@ function lv_sessao(): void
     session_set_cookie_params([
         'lifetime' => 0,
         'path' => '/',
-        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        // Cookie só por HTTPS. Atrás de um proxy que termina o HTTPS, o PHP não vê HTTPS: vale o X-Forwarded-Proto.
+        // (Forjar esse cabeçalho só deixaria o cookie mais restrito, nunca menos.) O .htaccess já força HTTPS.
+        'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https',
         'httponly' => true,
         'samesite' => 'Lax',
     ]);

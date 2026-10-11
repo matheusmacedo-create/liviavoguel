@@ -2,8 +2,24 @@
 Options -Indexes
 ErrorDocument 404 /404.html
 
-# Arquivos do repositório que não são do site: testes, documentação interna, o programa do
-# painel Multicam (roda no computador da modelo, não no site) e o próprio Git.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Arquivos do repositório que não são do site: testes, documentação interna, o programa do painel Multicam
+  # (roda no computador da modelo, não no site) e o próprio Git. O caminho aqui é relativo a esta pasta, então
+  # vale tanto pelo subdomínio (liviavoguel.nativon.com.br/.git) quanto pelo domínio principal
+  # (nativon.com.br/liviavoguel/.git).
+  RewriteRule (^|/)(\.git|scripts|docs|painel-multicam)(/|$) - [F,L]
+
+  # Sempre HTTPS: senha e cookie de login nunca andam em texto puro. Atrás de um proxy que termina o HTTPS, o
+  # X-Forwarded-Proto diz que a conexão do visitante já é segura (sem isso, entraria num redirecionamento sem fim).
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+</IfModule>
+
+# Sem mod_rewrite, o bloqueio acima ainda vale pelo subdomínio.
 RedirectMatch 404 ^/(\.git|scripts|docs|painel-multicam)(/|$)
 <FilesMatch "^(README\.md|\.gitignore|\.htaccess)$">
   Require all denied
@@ -12,4 +28,7 @@ RedirectMatch 404 ^/(\.git|scripts|docs|painel-multicam)(/|$)
 <IfModule mod_headers.c>
   Header always set X-Content-Type-Options "nosniff"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  # HSTS: o navegador passa a usar só HTTPS neste endereço. Só no subdomínio do site, para não valer para o
+  # domínio principal (nativon.com.br) quando o site é aberto pelo caminho /liviavoguel.
+  Header always set Strict-Transport-Security "max-age=31536000" "expr=%{HTTP_HOST} == 'liviavoguel.nativon.com.br'"
 </IfModule>

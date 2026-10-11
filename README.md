@@ -122,7 +122,10 @@ Regras importantes:
 2. **Arquivos:** o site está publicado em `https://liviavoguel.nativon.com.br`, numa pasta só dele
    (`public_html/liviavoguel` do `nativon.com.br`). A Hostinger clona o branch `main` direto do GitHub nessa pasta:
    em **Avançado → Git**, use **Implantar** para puxar as novidades do `main`. O `.htaccess` da raiz bloqueia
-   `scripts/`, `docs/`, `painel-multicam/`, `.git` e o README no navegador.
+   `scripts/`, `docs/`, `painel-multicam/`, `.git` e o README no navegador (pelo subdomínio e também pelo caminho
+   `nativon.com.br/liviavoguel/`), força HTTPS (redireciona http para https, também atrás de proxy) e liga o HSTS no
+   subdomínio do site. Para conferir depois do deploy: `curl -I https://nativon.com.br/liviavoguel/.git/HEAD` tem que dar
+   403, e `curl -I http://liviavoguel.nativon.com.br/` tem que dar 301 para o https.
 3. **PHP:** em **Avançado → Configuração do PHP**, escolha PHP 8.1 ou mais novo, com as extensões `curl` e `pdo_mysql`
    (já vêm ligadas por padrão).
 
@@ -162,6 +165,12 @@ do mesmo jeito.
    painel da Unicopag: o estorno também tira os créditos do saldo.
 
 ### Proteções do pagamento
+
+- **Teste de cartões roubados:** depois de 5 cartões recusados em 24 h na mesma conta (10 no mesmo IP), ou de 10
+  tentativas de cartão no mesmo IP em 1 hora, o site só aceita Pix até o prazo vencer.
+- **Login:** os erros de senha contam por e-mail e IP juntos, então quem chuta senhas de um lugar só trava a si mesmo, e
+  a dona da conta entra normalmente de outro lugar. O e-mail sozinho só trava num ataque espalhado por muitos IPs (10×
+  o limite). Acertar a senha zera os erros daquele IP. Vale para clientes, modelos e equipe.
 
 - **O pedido é gravado antes da cobrança.** Se a Unicopag aprovar e a resposta se perder (queda, timeout), o aviso dela
   acha o pedido pelo código que vai no `metadata` e credita do mesmo jeito.
@@ -265,13 +274,16 @@ as mesmas mensagens, buscadas a cada 3 segundos enquanto a aba está visível (`
 
 - Escrever (`api/chat-enviar.php`) exige login e a modelo ao vivo. Mensagens de até 200 caracteres; as palavras
   bloqueadas em "Configurar sala" são barradas também no servidor (sem diferenciar maiúsculas nem acentos).
-- Freio contra spam: uma mensagem a cada 2 segundos e no máximo 20 por minuto por pessoa.
+- Freio contra spam: uma mensagem a cada 2 segundos e no máximo 20 por minuto por pessoa (contando junto as
+  abas e aparelhos da mesma conta), e no máximo 60 por minuto por IP somando todas as contas.
+- Apelido com palavra que a modelo bloqueou aparece como "anônimo"; apelido que imita uma modelo ou a equipe
+  ("Livia_Voguel", "livia123", "suporte") é recusado no cadastro e na troca.
 - Gorjetas aparecem no chat de todos com o recado (até 80 caracteres), lançadas pelo `api/gastar.php` junto com o
   débito; recado com palavra bloqueada é recusado antes de debitar. O show privado não aparece no chat.
 - Cada pessoa aparece só pelo apelido.
 - **Moderação** (seção "Chat" do painel, `api/modelo-chat.php`): a modelo vê o chat da própria sala, apaga mensagens
-  (somem da tela de todos em poucos segundos) e bloqueia quem escreveu (a pessoa não escreve mais na sala dela e as
-  mensagens dela somem; ainda pode mandar gorjeta, sem recado). A lista de bloqueados tem "Desbloquear".
+  e recados de gorjeta (somem da tela de todos em poucos segundos) e bloqueia quem escreveu (a pessoa não escreve mais
+  na sala dela e as mensagens e recados dela somem; ainda pode mandar gorjeta, sem recado). A lista de bloqueados tem "Desbloquear".
   Tabelas `lv_chat_apagadas` e `lv_chat_bloqueios`; a mensagem apagada fica no banco como histórico.
 Todo endpoint novo da área da modelo (ganhos, perfil, status) deve começar com `lv_exigir_modelo()`.
 

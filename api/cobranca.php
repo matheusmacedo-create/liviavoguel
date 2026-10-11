@@ -95,6 +95,22 @@ if ($metodo === 'pix') {
 if (lv_contar_eventos('cobranca', (string) $usuarioId, 3600) >= LV_COBRANCAS_POR_HORA) {
     lv_falhar(429, 'Muitas tentativas de pagamento. Aguarde alguns minutos.');
 }
+// Freio contra quem testa cartões roubados: recusas por conta e por IP em 24 h, e tentativas de cartão por IP por
+// hora (criar contas é livre, então o freio por conta sozinho não basta). Pix continua liberado.
+if ($metodo === 'cartao') {
+    if (lv_contar_eventos('cartao_recusado', 'u:' . $usuarioId, 86400) >= LV_CARTAO_RECUSAS_DIA
+        || lv_contar_eventos('cartao_recusado', 'ip:' . lv_ip(), 86400) >= 2 * LV_CARTAO_RECUSAS_DIA
+        || lv_contar_eventos('cartao_ip', lv_ip(), 3600) >= LV_CARTAO_POR_HORA_IP) {
+        lv_falhar(429, 'Muitas tentativas com cartão. Pague com Pix ou tente de novo mais tarde.');
+    }
+    lv_registrar('cartao_ip', lv_ip());
+}
+$registrarRecusa = static function () use ($metodo, $usuarioId): void {
+    if ($metodo === 'cartao') {
+        lv_registrar('cartao_recusado', 'u:' . $usuarioId);
+        lv_registrar('cartao_recusado', 'ip:' . lv_ip());
+    }
+};
 lv_registrar('cobranca', (string) $usuarioId, $metodo . ' · pacote ' . $pacote);
 
 // O pedido é gravado ANTES da cobrança: se a Unicopag aprovar e a resposta se perder no caminho (timeout, queda),
@@ -119,6 +135,7 @@ try {
     if ($recusada) {
         // A Unicopag respondeu que não aceitou: nada foi cobrado.
         lv_aplicar_status($pedidoId, 'falhou');
+        $registrarRecusa();
     }
     // Sem resposta clara (fora do ar, timeout), o pedido fica pendente: se a cobrança tiver passado, o aviso
     // da Unicopag credita; se não, ele vence sozinho em 25 h (lib/creditos.php).
@@ -159,6 +176,7 @@ if ($status === 'pago') {
     $pedido = lv_aplicar_status((int) $pedido['id'], 'pago');
 }
 if ($pedido['status'] === 'falhou') {
+    $registrarRecusa();
     $recusa = 'O pagamento não passou: o banco recusou a cobrança. Tente outro cartão ou pague com Pix.';
     lv_json(array_replace(lv_pedido_publico($pedido), ['ok' => false, 'erro' => $recusa, 'mensagem' => $recusa]), 402);
 }

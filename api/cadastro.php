@@ -16,9 +16,15 @@ if (strlen($senha) < LV_SENHA_MINIMA || strlen($senha) > 200) {
     lv_falhar(422, 'A senha precisa ter pelo menos ' . LV_SENHA_MINIMA . ' caracteres.', ['campo' => 'senha']);
 }
 $padrao = str_pad(substr(preg_replace('/\W+/', '_', (string) strstr($email, '@', true)) ?? '', 0, 20), 3, '_');
+if (lv_apelido_reservado($padrao)) {
+    $padrao = 'fa_' . random_int(1000, 99999); // o começo do e-mail imita uma modelo: apelido neutro
+}
 $apelido = lv_apelido(array_key_exists('apelido', $b) ? $b['apelido'] : $padrao);
 if ($apelido === '') {
     lv_falhar(422, 'Apelido: de 3 a 20 letras, números ou _.', ['campo' => 'apelido']);
+}
+if (lv_apelido_reservado($apelido)) {
+    lv_falhar(422, 'Esse apelido não pode ser usado. Escolha outro.', ['campo' => 'apelido']);
 }
 if (($b['maior18'] ?? false) !== true) {
     lv_falhar(422, 'Confirme que você tem 18 anos ou mais.', ['campo' => 'maior18']);

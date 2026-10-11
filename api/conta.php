@@ -13,6 +13,9 @@ if (array_key_exists('apelido', $b)) {
     if ($apelido === '') {
         lv_falhar(422, 'Apelido: de 3 a 20 letras, números ou _.', ['campo' => 'apelido']);
     }
+    if (lv_apelido_reservado($apelido)) {
+        lv_falhar(422, 'Esse apelido não pode ser usado. Escolha outro.', ['campo' => 'apelido']);
+    }
     lv_db()->prepare('UPDATE lv_usuarios SET apelido = ? WHERE id = ?')->execute([$apelido, $usuarioId]);
 }
 if (array_key_exists('senha_nova', $b)) {
