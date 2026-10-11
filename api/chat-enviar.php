@@ -24,6 +24,9 @@ if ($texto === '' || mb_strlen($texto) > LV_CHAT_MAX) {
 if (lv_chat_bloqueada($slug, $texto) !== null) {
     lv_falhar(422, LV_MODELOS[$slug]['nome'] . ' bloqueou uma das palavras dessa mensagem.', ['campo' => 'texto']);
 }
+if (lv_chat_bloqueado($slug, $usuarioId)) {
+    lv_falhar(403, 'Você não pode mais escrever nesta sala.');
+}
 $chave = 'u:' . $usuarioId;
 if (lv_contar_eventos('chat', $chave, LV_CHAT_INTERVALO) > 0 || lv_contar_eventos('chat', $chave, 60) >= LV_CHAT_POR_MINUTO) {
     lv_falhar(429, 'Calma! Espere um pouquinho antes de mandar outra mensagem.');

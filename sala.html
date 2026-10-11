@@ -143,9 +143,9 @@
     const msgs = $("msgs");
     const vistas = new Set();
     let ultimoId = 0;
-    function postar(html, classe = "") {
+    function postar(html, classe = "", id = null) {
       const noFim = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60; // quem rolou para ler não é puxado
-      msgs.insertAdjacentHTML("beforeend", `<div class="msg ${classe}">${html}</div>`);
+      msgs.insertAdjacentHTML("beforeend", `<div class="msg ${classe}"${id ? ` data-id="${Number(id)}"` : ""}>${html}</div>`);
       if (noFim) msgs.scrollTop = msgs.scrollHeight;
     }
     function mostrar(msg) {
@@ -153,9 +153,9 @@
       vistas.add(msg.id);
       ultimoId = Math.max(ultimoId, msg.id);
       if (msg.tipo === "gorjeta") {
-        postar(`💸 <b>${esc(msg.apelido)}</b> mandou ${Number(msg.creditos)} créditos${msg.texto ? `: “${esc(msg.texto)}”` : "!"}`, "gorjeta");
+        postar(`💸 <b>${esc(msg.apelido)}</b> mandou ${Number(msg.creditos)} créditos${msg.texto ? `: “${esc(msg.texto)}”` : "!"}`, "gorjeta", msg.id);
       } else {
-        postar(`<b>${esc(msg.apelido)}:</b>${esc(msg.texto)}`);
+        postar(`<b>${esc(msg.apelido)}:</b>${esc(msg.texto)}`, "", msg.id);
       }
     }
     // Tudo entra por aqui, em ordem de id: nada é mostrado "por fora", senão o marcador (ultimoId)
@@ -169,6 +169,8 @@
       try {
         const r = await LV.api(`chat.php?modelo=${encodeURIComponent(m.slug)}&depois=${ultimoId}`);
         r.mensagens.forEach(mostrar);
+        // O que a modelo apagou some da tela de todo mundo.
+        (r.apagadas || []).forEach((id) => msgs.querySelector(`[data-id="${Number(id)}"]`)?.remove());
       } catch {}
       buscando = false;
       if (deNovo) { deNovo = false; buscarChat(); }

@@ -1,7 +1,8 @@
 <?php
 /**
- * GET ?modelo=<slug>&depois=<id> → { ok, mensagens: [{ id, tipo, apelido, texto, creditos, data }], ultimo_id }.
- * Público (quem só assiste também lê). Sem `depois`: as últimas mensagens. A sala consulta a cada poucos segundos.
+ * GET ?modelo=<slug>&depois=<id> → { ok, mensagens: [{ id, tipo, apelido, texto, creditos, data }], ultimo_id, apagadas: [ids] }.
+ * Público (quem só assiste também lê). Sem `depois`: as últimas mensagens. A sala consulta a cada poucos segundos e tira
+ * da tela os ids de `apagadas` (o que a modelo apagou nos últimos minutos).
  */
 declare(strict_types=1);
 require_once __DIR__ . '/lib/base.php';
@@ -15,4 +16,5 @@ if (!isset(LV_MODELOS[$slug])) {
 }
 $depois = is_string($_GET['depois'] ?? null) && ctype_digit($_GET['depois']) ? (int) $_GET['depois'] : 0;
 $mensagens = lv_chat_listar($slug, $depois);
-lv_json(['ok' => true, 'mensagens' => $mensagens, 'ultimo_id' => $mensagens ? end($mensagens)['id'] : $depois]);
+lv_json(['ok' => true, 'mensagens' => $mensagens, 'ultimo_id' => $mensagens ? end($mensagens)['id'] : $depois,
+    'apagadas' => lv_chat_apagadas_recentes($slug)]);

@@ -65,3 +65,19 @@ CREATE TABLE IF NOT EXISTS lv_chat (
   KEY ix_chat_sala (slug, id),
   KEY ix_chat_usuario (usuario_id, criado_em)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Moderação do chat pela modelo. Mensagem apagada continua em lv_chat (histórico), mas some da sala; as salas
+-- abertas recebem os ids apagados recentes e tiram da tela. Bloqueado não escreve mais na sala daquela modelo.
+CREATE TABLE IF NOT EXISTS lv_chat_apagadas (
+  chat_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  slug VARCHAR(40) NOT NULL,
+  apagada_em DATETIME NOT NULL,
+  KEY ix_apagadas_sala (slug, apagada_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS lv_chat_bloqueios (
+  slug VARCHAR(40) NOT NULL,
+  usuario_id INT UNSIGNED NOT NULL,
+  criado_em DATETIME NOT NULL,
+  PRIMARY KEY (slug, usuario_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
