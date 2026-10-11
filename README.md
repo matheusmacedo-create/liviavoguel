@@ -20,13 +20,15 @@ Todas as páginas mostram o aviso de **18+** na primeira visita.
 
 ## Modo demonstração
 
-O padrão é `modoDemo: false`: login, saldo, extrato, gorjetas, privado e pagamento usam a pasta `api/`
-(veja "Pagamentos (Unicopag)" abaixo), que precisa de PHP + MySQL.
+Com `modoDemo: false`, login, saldo, extrato, gorjetas, privado e pagamento usam a pasta `api/`
+(veja "Pagamentos (Unicopag)" abaixo), que precisa de PHP + MySQL. **Por enquanto o site está com
+`modoDemo: true`**: mude para `false` em `assets/js/config.js` depois de criar o banco, o `api/config.php`
+e fazer a compra de teste.
 
 Para ver o visual sem servidor (por exemplo abrindo os arquivos direto ou num `npx serve`), mude para
 `modoDemo: true` em `assets/js/config.js`: tudo fica simulado no navegador (há uma faixa amarela avisando) e dá
 para testar o fluxo inteiro: criar conta → comprar créditos → "Simular pagamento aprovado" → gorjeta → privado →
-extrato. Nunca publique o site com `modoDemo: true`.
+extrato. Com o site no ar e vendendo de verdade, o `modoDemo` tem que ser `false`.
 
 > A `painel-modelo.html` ainda não tem senha. Antes de colocar o site no ar, ela precisa de login próprio da modelo.
 
