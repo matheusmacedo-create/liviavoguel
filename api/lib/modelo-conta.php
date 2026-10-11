@@ -153,19 +153,35 @@ function lv_modelo_lancamentos(string $slug, ?string $de = null, ?string $ate = 
 /** Sem aviso do painel por mais que isto (em segundos), a modelo aparece offline. O painel avisa a cada minuto. */
 const LV_AO_VIVO_VALIDADE = 300;
 
-/** Status de todas as modelos de LV_MODELOS: [slug => ['online' => bool, 'desde' => ISO|null]]. */
+/**
+ * Aviso do servidor de vídeo (lv_modelos_publicando) vale por até isto sem ser renovado. O nginx-rtmp renova sozinho
+ * (notify_update_timeout); quem só avisa início e fim fica coberto se o aviso de fim se perder.
+ */
+const LV_PUBLICANDO_VALIDADE = 6 * 3600;
+
+/**
+ * Status de todas as modelos de LV_MODELOS: [slug => ['online' => bool, 'desde' => ISO|null, 'painel' => bool]].
+ * Ao vivo = botão do painel ligado (e o painel avisando) OU o OBS transmitindo (aviso do servidor de vídeo). Se ela
+ * desligou no painel depois que a transmissão começou, vale o desligar.
+ */
 function lv_ao_vivo_todas(): array
 {
     $limite = gmdate('Y-m-d H:i:s', time() - LV_AO_VIVO_VALIDADE);
-    $linhas = lv_db()->query('SELECT slug, online, desde, visto_em FROM lv_modelos_ao_vivo')->fetchAll();
-    $porSlug = array_column($linhas, null, 'slug');
+    $limitePub = gmdate('Y-m-d H:i:s', time() - LV_PUBLICANDO_VALIDADE);
+    $porSlug = array_column(lv_db()->query('SELECT slug, online, desde, visto_em FROM lv_modelos_ao_vivo')->fetchAll(), null, 'slug');
+    $pub = array_column(lv_db()->query('SELECT slug, desde, visto_em FROM lv_modelos_publicando')->fetchAll(), null, 'slug');
     $saida = [];
     foreach (array_keys(LV_MODELOS) as $slug) {
         $l = $porSlug[$slug] ?? null;
-        $online = $l !== null && (int) $l['online'] === 1 && $l['visto_em'] >= $limite;
+        $p = $pub[$slug] ?? null;
+        $peloPainel = $l !== null && (int) $l['online'] === 1 && $l['visto_em'] >= $limite;
+        $peloObs = $p !== null && $p['visto_em'] >= $limitePub
+            && !($l !== null && (int) $l['online'] === 0 && $l['visto_em'] >= $p['desde']);
+        $desdes = array_filter([$peloPainel ? $l['desde'] : null, $peloObs ? $p['desde'] : null]);
         $saida[$slug] = [
-            'online' => $online,
-            'desde' => $online && $l['desde'] ? gmdate('Y-m-d\TH:i:s\Z', (int) strtotime($l['desde'] . ' UTC')) : null,
+            'online' => $peloPainel || $peloObs,
+            'painel' => $peloPainel, // ligado pelo botão (o painel mantém avisando); fora disso, só pelo OBS
+            'desde' => $desdes ? gmdate('Y-m-d\TH:i:s\Z', (int) strtotime(min($desdes) . ' UTC')) : null,
         ];
     }
     return $saida;

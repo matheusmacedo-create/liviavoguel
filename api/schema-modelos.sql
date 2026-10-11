@@ -156,3 +156,12 @@ CREATE TABLE IF NOT EXISTS lv_modelos_stream (
   rtmp_chave VARCHAR(255) NOT NULL,
   atualizado_em DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Aviso automático do servidor de vídeo (api/stream-evento.php): a modelo começou a transmitir no OBS. Enquanto houver
+-- linha aqui (renovada pelo servidor, ou no máximo LV_PUBLICANDO_VALIDADE depois), a sala fica ao vivo sem o botão do
+-- painel. Ao parar, o servidor avisa e a linha sai. Desligar no painel depois de começar vence o aviso.
+CREATE TABLE IF NOT EXISTS lv_modelos_publicando (
+  slug VARCHAR(40) NOT NULL PRIMARY KEY,
+  desde DATETIME NOT NULL,
+  visto_em DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

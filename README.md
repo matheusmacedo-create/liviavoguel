@@ -61,7 +61,8 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
    roda (serviço de streaming que aceite conteúdo adulto, ou servidor próprio numa VPS) e colar os links no painel da equipe.
 2. **Excluir conta e trocar e-mail:** feitos pelo próprio site, em "Minha conta → Meus dados" (veja "Conta do cliente" no fim).
 3. **Chat em tempo real:** feito, com moderação pela modelo (veja "Chat das salas" no fim).
-4. **Status online automático:** hoje o campo `online` é manual.
+4. **Status online automático:** feito. A sala entra ao vivo quando o OBS começa e sai quando ele para, por aviso do servidor
+   de vídeo (veja "Ao vivo automático" no fim); o botão do painel continua valendo.
 5. **Painel da modelo:** login, ganhos, saques, botão "ao vivo", perfil, fotos e "Configurar sala" já vêm do servidor.
 
 Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
@@ -351,3 +352,36 @@ A chave é segredo: só a própria modelo (`api/modelo-transmitir.php`) e a equi
 do player (`api/stream.php`). Tabela `lv_modelos_stream` em `api/schema-modelos.sql` (criada sozinha no próximo acesso).
 
 No modo demonstração a sala continua usando o `streamUrl` de `assets/js/modelos.js`.
+
+### Ao vivo automático
+
+O servidor de vídeo avisa o site quando a modelo começa e para de transmitir, e a sala entra e sai do ao vivo sozinha,
+sem ela precisar do botão do painel. O endereço do aviso aparece no painel da equipe, na janela **Transmissão**:
+`https://<seu-site>/api/stream-evento.php`. A própria chave de transmissão identifica a modelo, então só quem tem a chave
+consegue avisar; chave desconhecida ou conta bloqueada recebem 403, e 20 chaves erradas do mesmo IP em 15 minutos, 429.
+
+- **nginx-rtmp** (servidor próprio), no bloco `application`:
+
+  ```nginx
+  on_publish      https://<seu-site>/api/stream-evento.php;
+  on_publish_done https://<seu-site>/api/stream-evento.php;
+  on_update       https://<seu-site>/api/stream-evento.php;
+  notify_update_timeout 60s;
+  ```
+
+  Com o `on_publish`, o nginx também recusa a transmissão de quem não tem uma chave cadastrada.
+- **MediaMTX** (servidor próprio), no `mediamtx.yml`, no caminho das modelos:
+
+  ```yaml
+  runOnReady: curl -s -X POST -d "evento=inicio&chave=$MTX_PATH" https://<seu-site>/api/stream-evento.php
+  runOnNotReady: curl -s -X POST -d "evento=fim&chave=$MTX_PATH" https://<seu-site>/api/stream-evento.php
+  ```
+
+  `live/<chave>` também vale: o site usa o último pedaço do caminho.
+- **Serviço de streaming:** se ele tiver webhook de início e fim, mande um POST (formulário ou JSON) com `evento=inicio`
+  ou `evento=fim` e `chave=<chave da modelo>`. Sem webhook, a modelo usa o botão **Ao vivo** do painel, como antes.
+
+Regras: o aviso dura até o servidor mandar o fim. Se o fim se perder, a sala sai do ao vivo sozinha depois de 6 horas sem
+renovação (`LV_PUBLICANDO_VALIDADE`; com o `on_update` do nginx a renovação é a cada minuto). Se a modelo desligar no
+painel com o OBS ainda transmitindo, vale o desligar, até ela começar uma transmissão nova. Bloquear a conta derruba a
+sala na hora. Tabela `lv_modelos_publicando` em `api/schema-modelos.sql` (criada sozinha no próximo acesso).
