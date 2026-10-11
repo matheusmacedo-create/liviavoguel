@@ -3,7 +3,7 @@ Options -Indexes
 ErrorDocument 404 /404.html
 
 # Arquivos do repositório que não são do site: testes, documentação interna e o próprio Git.
-RedirectMatch 404 ^/(\.git|scripts|docs)(/|$)
+RedirectMatch 404 ^/(\.git|scripts|docs|painel-multicam)(/|$)
 <FilesMatch "^(README\.md|\.gitignore|\.htaccess)$">
   Require all denied
 </FilesMatch>

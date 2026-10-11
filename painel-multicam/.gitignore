@@ -1,0 +1,3 @@
+node_modules/
+# Links secretos (API do Chaturbate etc.). Nunca suba este arquivo.
+config/segredos.local.json
