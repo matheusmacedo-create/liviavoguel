@@ -55,7 +55,7 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 1. **Transmissão ao vivo:** contratar um serviço de streaming que aceite conteúdo adulto e
    colar o link do player no campo `streamUrl`. A modelo transmite pelo OBS (RTMP).
 2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
-3. **Chat em tempo real:** feito (veja "Chat das salas" no fim); falta a modelo apagar mensagens e bloquear pessoas.
+3. **Chat em tempo real:** feito, com moderação pela modelo (veja "Chat das salas" no fim).
 4. **Status online automático:** hoje o campo `online` é manual.
 5. **Painel da modelo:** login, ganhos, botão "ao vivo", perfil e "Configurar sala" já vêm do servidor; faltam saques e fotos.
 
@@ -224,6 +224,10 @@ as mesmas mensagens, buscadas a cada 3 segundos enquanto a aba está visível (`
 - Gorjetas aparecem no chat de todos com o recado (até 80 caracteres), lançadas pelo `api/gastar.php` junto com o
   débito; recado com palavra bloqueada é recusado antes de debitar. O show privado não aparece no chat.
 - Cada pessoa aparece só pelo apelido.
+- **Moderação** (seção "Chat" do painel, `api/modelo-chat.php`): a modelo vê o chat da própria sala, apaga mensagens
+  (somem da tela de todos em poucos segundos) e bloqueia quem escreveu (a pessoa não escreve mais na sala dela e as
+  mensagens dela somem; ainda pode mandar gorjeta, sem recado). A lista de bloqueados tem "Desbloquear".
+  Tabelas `lv_chat_apagadas` e `lv_chat_bloqueios`; a mensagem apagada fica no banco como histórico.
 Todo endpoint novo da área da modelo (ganhos, perfil, status) deve começar com `lv_exigir_modelo()`.
 
 Testes: `php scripts/testar_area_modelo.php` (sem MySQL nem internet).

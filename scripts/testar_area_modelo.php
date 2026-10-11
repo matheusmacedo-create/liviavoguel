@@ -558,6 +558,82 @@ verificar('mensagem vinda de outro site: 403', $s, 403);
 [$s] = chamar('chat.php', 'POST', []);
 verificar('chat.php por POST: 405', $s, 405);
 
+// ============================================================================= moderação do chat
+recomecar();
+criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$pdo = lv_db();
+foreach (['fa_1', 'bia_rj'] as $ap) {
+    $pdo->prepare("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES (?, ?, 'x', '2026-01-01 00:00:00')")->execute(["$ap@exemplo.com.br", $ap]);
+}
+[$fa, $bia] = array_map('intval', $pdo->query('SELECT id FROM lv_usuarios ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
+lv_lancar($fa, 500, 'compra', null, 'Pacote');
+lv_ao_vivo_definir('livia-voguel', true);
+$m1 = lv_chat_postar('livia-voguel', $fa, 'fa_1', 'msg', 'oi');
+$m2 = lv_chat_postar('livia-voguel', $bia, 'bia_rj', 'msg', 'besteira');
+$m3 = lv_chat_postar('livia-voguel', $bia, 'bia_rj', 'msg', 'outra besteira');
+$moderar = static fn(array $corpo) => chamar('modelo-chat.php', 'POST', $corpo);
+$textosPublicos = static function (): array { $_GET = ['modelo' => 'livia-voguel']; $r = chamar('chat.php')[1]; $_GET = []; return [array_map(static fn($m) => $m['texto'], $r['mensagens']), $r['apagadas']]; };
+
+$_SESSION = ['usuario_id' => $fa];
+[$s] = $moderar(['acao' => 'apagar', 'id' => $m2]);
+verificar('cliente não modera: 401', $s, 401);
+$_GET = [];
+[$s] = chamar('modelo-chat.php');
+verificar('cliente não lê o chat do painel: 401', $s, 401);
+
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s, $c] = chamar('modelo-chat.php');
+verificar('painel lê o chat com o autor', [$s, array_map(static fn($m) => $m['usuario'], $c['mensagens'])], [200, [$fa, $bia, $bia]]);
+$_GET = ['modelo' => 'livia-voguel'];
+verificar('chat público não traz o id interno de quem escreveu', array_key_exists('usuario', chamar('chat.php')[1]['mensagens'][0]), false);
+$_GET = [];
+
+[$s] = $moderar(['acao' => 'apagar', 'id' => $m2]);
+verificar('modelo apaga mensagem: 200', $s, 200);
+[$textos, $apagadas] = $textosPublicos();
+verificar('mensagem apagada some para todos', $textos, ['oi', 'outra besteira']);
+verificar('salas abertas recebem o id apagado', $apagadas, [$m2]);
+[$s] = $moderar(['acao' => 'apagar', 'id' => $m2]);
+verificar('apagar de novo não quebra', $s, 200);
+[$s] = $moderar(['acao' => 'apagar', 'id' => 99999]);
+verificar('apagar mensagem que não existe: 404', $s, 404);
+$outra = lv_chat_postar('outra-sala', $fa, 'fa_1', 'msg', 'em outra sala');
+[$s] = $moderar(['acao' => 'apagar', 'id' => $outra]);
+verificar('modelo não apaga mensagem de outra sala: 404', $s, 404);
+
+[$s, $c] = $moderar(['acao' => 'bloquear', 'id' => $m3]);
+verificar('bloquear quem escreveu: 200 e aparece na lista', [$s, array_map(static fn($b) => $b['apelido'], $c['bloqueados'])], [200, ['bia_rj']]);
+verificar('bloquear apaga as mensagens da pessoa', $textosPublicos()[0], ['oi']);
+verificar('lista de bloqueados não mostra e-mail', str_contains(json_encode($c), '@'), false);
+
+$sessaoModelo = $_SESSION;
+$_SESSION = ['usuario_id' => $bia];
+[$s, $c] = chamar('chat-enviar.php', 'POST', ['modelo' => 'livia-voguel', 'texto' => 'oi de novo']);
+verificar('bloqueada não escreve: 403', $s, 403);
+lv_lancar($bia, 100, 'compra', null, 'Pacote');
+[$s] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 10, 'recado' => 'me desbloqueia']);
+verificar('bloqueada ainda manda gorjeta', $s, 200);
+$_GET = ['modelo' => 'livia-voguel'];
+$ultima = array_slice(chamar('chat.php')[1]['mensagens'], -1)[0];
+$_GET = [];
+verificar('gorjeta de bloqueada aparece sem recado', [$ultima['tipo'], $ultima['apelido'], $ultima['texto'], $ultima['creditos']], ['gorjeta', 'bia_rj', '', 10]);
+
+$_SESSION = $sessaoModelo;
+[$s, $c] = $moderar(['acao' => 'desbloquear', 'usuario' => $bia]);
+verificar('desbloquear: 200 e sai da lista', [$s, $c['bloqueados']], [200, []]);
+$_SESSION = ['usuario_id' => $bia];
+[$s] = chamar('chat-enviar.php', 'POST', ['modelo' => 'livia-voguel', 'texto' => 'obrigada']);
+verificar('desbloqueada volta a escrever', $s, 200);
+
+$_SESSION = $sessaoModelo;
+[$s] = $moderar(['acao' => 'sumir', 'id' => $m1]);
+verificar('ação inválida: 422', $s, 422);
+[$s] = $moderar(['acao' => 'apagar', 'id' => (string) $m1]);
+verificar('id em texto: 404', $s, 404);
+[$s] = chamar('modelo-chat.php', 'POST', ['acao' => 'apagar', 'id' => $m1], ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('moderar vindo de outro site: 403', $s, 403);
+
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
 $js = preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', (string) file_get_contents($raiz . '/assets/js/modelos.js'));

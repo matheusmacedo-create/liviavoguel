@@ -18,6 +18,7 @@
       <a href="#ganhos">Ganhos</a>
       <a href="#perfil">Meu perfil</a>
       <a href="#sala">Configurar sala</a>
+      <a href="#chat">Chat</a>
       <a href="#seguranca">Senha e acesso</a>
     </nav>
     <section id="conteudo"></section>
@@ -232,6 +233,17 @@
           <button class="btn btn-primario" id="salvar-perfil">Salvar perfil</button>
         </form>`,
 
+      chat: () => S.modoDemo ? `
+        <div class="painel"><h2>Chat da sala</h2>
+          <div class="vazio"><div class="icone">💬</div>No modo demonstração, o chat fica só no navegador de cada pessoa.<br>A moderação funciona quando o servidor estiver no ar.</div></div>` : `
+        <div class="painel">
+          <div class="painel-topo"><h2>Chat da sala</h2><small style="color:var(--texto-2)">Atualiza sozinho</small></div>
+          <p style="color:var(--texto-2);font-size:.9rem;margin-bottom:14px"><strong>Apagar</strong> tira a mensagem da tela de todos.
+            <strong>Bloquear</strong> impede a pessoa de escrever na sua sala e apaga as mensagens dela; ela ainda pode mandar gorjeta, sem recado.</p>
+          <div id="mod-msgs"><div class="vazio"><span class="girando" style="display:inline-block"></span></div></div>
+        </div>
+        <div class="painel"><h2>Bloqueados</h2><div id="mod-bloqueados"></div></div>`,
+
       seguranca: () => `
         <form class="painel" id="form-senha" novalidate>
           <h2>Trocar senha</h2>
@@ -268,8 +280,75 @@
         </form>`
     };
 
+    // ---------- Chat: moderação (api/modelo-chat.php) ----------
+    let chatTimer = null;
+    let modUltimo = 0;
+    const modMsgs = new Map();
+    function desenharModeracao(bloqueados) {
+      const caixa = document.getElementById("mod-msgs");
+      if (!caixa) return;
+      const lista = [...modMsgs.values()].slice(-50).reverse(); // mais novas em cima
+      caixa.innerHTML = lista.length ? `<div class="tabela-rolagem"><table class="tabela">
+        <thead><tr><th>Hora</th><th>De</th><th>Mensagem</th><th></th></tr></thead>
+        <tbody>${lista.map((msg) => `<tr>
+          <td style="white-space:nowrap">${horaBrasilia(msg.data).split(", ")[1] || ""}</td>
+          <td>${esc(msg.apelido)}</td>
+          <td>${msg.tipo === "gorjeta" ? `💸 ${Number(msg.creditos)} créditos${msg.texto ? ` · “${esc(msg.texto)}”` : ""}` : esc(msg.texto)}</td>
+          <td style="text-align:right;white-space:nowrap">
+            ${msg.tipo === "msg" ? `<button class="btn btn-pequeno" data-apagar="${msg.id}">Apagar</button>` : ""}
+            ${msg.usuario ? `<button class="btn btn-pequeno perigo" data-bloquear="${msg.id}">Bloquear</button>` : ""}
+          </td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="vazio"><div class="icone">💬</div>Nenhuma mensagem ainda.</div>`;
+      if (bloqueados) {
+        document.getElementById("mod-bloqueados").innerHTML = bloqueados.length
+          ? `<ul class="lista-agenda">${bloqueados.map((b) => `<li><span>${esc(b.apelido)}</span>
+              <button class="btn btn-pequeno" data-desbloquear="${b.usuario}">Desbloquear</button></li>`).join("")}</ul>`
+          : `<p style="color:var(--texto-2)">Ninguém bloqueado.</p>`;
+      }
+    }
+    async function carregarModeracao() {
+      if (!document.getElementById("mod-msgs") || document.hidden) return;
+      try {
+        const r = await LV.api("modelo-chat.php?depois=" + modUltimo);
+        r.mensagens.forEach((msg) => { modMsgs.set(msg.id, msg); modUltimo = Math.max(modUltimo, msg.id); });
+        r.apagadas.forEach((id) => modMsgs.delete(id));
+        desenharModeracao(r.bloqueados);
+      } catch (err) {
+        if (err.status === 401) location.replace("modelo-entrar.html");
+      }
+    }
+    async function moderar(corpo) {
+      try {
+        const r = await LV.api("modelo-chat.php", corpo);
+        r.apagadas.forEach((id) => modMsgs.delete(id));
+        desenharModeracao(r.bloqueados);
+        LV.toast({ apagar: "Mensagem apagada.", bloquear: "Pessoa bloqueada na sua sala.", desbloquear: "Pessoa desbloqueada." }[corpo.acao]);
+      } catch (err) {
+        if (err.status === 401) return location.replace("modelo-entrar.html");
+        LV.toast(err.message);
+      }
+    }
+    conteudo.addEventListener("click", (e) => {
+      const apagar = e.target.closest("[data-apagar]");
+      const bloquear = e.target.closest("[data-bloquear]");
+      const desbloquear = e.target.closest("[data-desbloquear]");
+      if (apagar) moderar({ acao: "apagar", id: Number(apagar.dataset.apagar) });
+      if (bloquear) {
+        const msg = modMsgs.get(Number(bloquear.dataset.bloquear));
+        const md = LV.modal(`
+          <div class="modal-icone" style="color:#ff7a90">⛔</div>
+          <h2>Bloquear ${esc(msg ? msg.apelido : "esta pessoa")}?</h2>
+          <p>Ela não vai mais poder escrever na sua sala, e as mensagens dela somem. Você pode desbloquear depois.</p>
+          <div class="acoes"><button class="btn btn-bloco perigo" id="confirmar-bloqueio">Bloquear</button>
+            <button class="btn btn-bloco" data-fechar>Cancelar</button></div>`);
+        md.querySelector("#confirmar-bloqueio").addEventListener("click", () => { md.fechar(); moderar({ acao: "bloquear", id: Number(bloquear.dataset.bloquear) }); });
+      }
+      if (desbloquear) moderar({ acao: "desbloquear", usuario: Number(desbloquear.dataset.desbloquear) });
+    });
+
     async function abrir() {
       const nome = location.hash.slice(1) in secoes ? location.hash.slice(1) : "inicio";
+      clearInterval(chatTimer);
       document.querySelectorAll("#lateral a").forEach((a) => a.classList.toggle("ativo", a.hash === "#" + nome));
       if (nome === "inicio" || nome === "ganhos") {
         conteudo.innerHTML = `<div class="vazio"><span class="girando" style="display:inline-block"></span><br>Carregando seus ganhos...</div>`;
@@ -277,6 +356,12 @@
         if ((location.hash.slice(1) || "inicio") !== nome && location.hash.slice(1) in secoes) return; // trocou de aba enquanto carregava
       }
       conteudo.innerHTML = secoes[nome]();
+      if (nome === "chat" && !S.modoDemo) {
+        modUltimo = 0;
+        modMsgs.clear();
+        carregarModeracao();
+        chatTimer = setInterval(carregarModeracao, 3000);
+      }
     }
 
     conteudo.addEventListener("change", async (e) => {

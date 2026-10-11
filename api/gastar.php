@@ -42,6 +42,8 @@ if ($saldo === null) {
     lv_falhar(402, 'Créditos insuficientes.', ['saldo' => lv_saldo($usuarioId), 'precisa' => $creditos]);
 }
 if ($tipo === 'gorjeta') {
-    lv_chat_postar($slug, $usuarioId, (string) (lv_usuario($usuarioId)['apelido'] ?? ''), 'gorjeta', $recado, $creditos);
+    // Quem a modelo bloqueou no chat ainda pode mandar gorjeta, mas sem recado.
+    $recadoNoChat = lv_chat_bloqueado($slug, $usuarioId) ? '' : $recado;
+    lv_chat_postar($slug, $usuarioId, (string) (lv_usuario($usuarioId)['apelido'] ?? ''), 'gorjeta', $recadoNoChat, $creditos);
 }
 lv_json(['ok' => true, 'creditos' => $creditos, 'saldo' => $saldo]);
