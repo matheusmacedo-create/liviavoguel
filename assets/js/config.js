@@ -9,7 +9,8 @@ window.SITE = {
 
   // true = login, saldo e pagamento simulados no navegador (para testar o visual).
   // Mude para false quando a pasta api/ (Unicopag) estiver no ar.
-  modoDemo: false,
+  // Fica true até o banco, o config.php e a compra de teste estarem prontos na Hostinger (README → Pagamentos).
+  modoDemo: true,
 
   // Pacotes de créditos. O preço cobrado de verdade é conferido no servidor
   // (api/), então mudar aqui exige mudar lá também.
