@@ -337,3 +337,12 @@ button { font: inherit; cursor: pointer; border: 0; }
 [hidden] { display: none !important; }
 /* Tabelas do painel: no celular some a coluna de apoio, para o valor caber sem arrastar */
 @media (max-width: 560px) { .col-opcional { display: none; } .tabela th, .tabela td { padding: 10px 6px; } }
+
+/* Fotos no painel da modelo */
+.grade-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.foto-item { position: relative; margin: 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--borda); background: var(--bg-2); }
+.foto-item.capa { border-color: var(--rosa); box-shadow: 0 0 0 1px var(--rosa); }
+.foto-item img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+.foto-item .selo-capa { position: absolute; top: 8px; left: 8px; background: var(--grad); color: #fff; font-size: .72rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+.foto-item figcaption { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
+.foto-item figcaption .btn { padding: 6px 10px; font-size: .78rem; }

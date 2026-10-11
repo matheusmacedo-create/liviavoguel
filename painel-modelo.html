@@ -219,11 +219,9 @@
             <div class="campo"><label for="p-tags">Interesses (separados por vírgula)</label><input id="p-tags" value="${esc(m.tags.join(", "))}"><span class="ajuda">Até 10</span></div>
             <div class="campo"><label for="p-idiomas">Idiomas (separados por vírgula)</label><input id="p-idiomas" value="${esc(m.idiomas.join(", "))}"><span class="ajuda">De 1 a 5</span></div>
           </div>
-          <div class="campo"><label>Fotos</label>
-            <div class="galeria">${[m.foto, ...m.galeria].map((f) => `<img src="${esc(f)}" alt="">`).join("")}</div>
-            <span class="ajuda">O envio de fotos pelo painel ainda não existe. Por enquanto, troque os arquivos em assets/img/.</span></div>
           <button class="btn btn-primario" id="salvar-perfil">Salvar perfil</button>
-        </form>`,
+        </form>
+        ${secaoFotos()}`,
 
       chat: () => S.modoDemo ? `
         <div class="painel"><h2>Chat da sala</h2>
@@ -271,6 +269,85 @@
           <button class="btn btn-primario" id="salvar-sala">Salvar</button>
         </form>`
     };
+
+    // ---------- Fotos (api/modelo-fotos.php) ----------
+    // A primeira foto vira a capa (página inicial, avatar e player); as outras formam a galeria da sala.
+    let fotos = null;
+    let maxFotos = 12;
+    async function carregarFotos() {
+      if (S.modoDemo) return (fotos = null);
+      try { const r = await LV.api("modelo-fotos.php"); fotos = r.fotos; maxFotos = r.max; } catch (err) {
+        if (err.status === 401) location.replace("modelo-entrar.html");
+        fotos = null;
+      }
+    }
+    function secaoFotos() {
+      if (S.modoDemo) {
+        return `<div class="painel"><h2>Fotos</h2>
+          <div class="galeria">${[m.foto, ...m.galeria].map((f) => `<img src="${esc(f)}" alt="">`).join("")}</div>
+          <p style="color:var(--texto-2);font-size:.85rem;margin-top:10px">No modo demonstração não dá para enviar fotos. Com o servidor no ar, você envia aqui.</p></div>`;
+      }
+      if (!fotos) return `<div class="painel"><h2>Fotos</h2>${semGanhos.replace("os ganhos", "as fotos")}</div>`;
+      return `<div class="painel">
+        <div class="painel-topo"><h2>Fotos</h2><small style="color:var(--texto-2)">${fotos.length} de ${maxFotos}</small></div>
+        <p style="color:var(--texto-2);font-size:.9rem;margin-bottom:14px">A <strong>capa</strong> aparece na página inicial e na sua sala; as outras formam a galeria. JPG, PNG ou WebP, até 5 MB cada.</p>
+        ${fotos.length ? `<div class="grade-fotos">${fotos.map((f) => `
+          <figure class="foto-item ${f.capa ? "capa" : ""}">
+            <img src="${esc(f.url)}" alt="" loading="lazy">
+            ${f.capa ? `<span class="selo-capa">Capa</span>` : ""}
+            <figcaption>
+              ${f.capa ? "" : `<button class="btn btn-pequeno" data-foto-capa="${f.id}">Usar como capa</button>`}
+              <button class="btn btn-pequeno perigo" data-foto-apagar="${f.id}">Apagar</button>
+            </figcaption>
+          </figure>`).join("")}</div>` : `<div class="vazio"><div class="icone">📷</div>Nenhuma foto enviada ainda.</div>`}
+        <label class="btn btn-primario" style="margin-top:14px;${fotos.length >= maxFotos ? "opacity:.5;pointer-events:none" : ""}">
+          📷 Enviar fotos<input type="file" id="enviar-fotos" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
+        <span id="progresso-fotos" style="color:var(--texto-2);font-size:.85rem;margin-left:10px"></span>
+      </div>`;
+    }
+    async function aplicarFotosNoSite() {
+      // Atualiza a capa/galeria usadas nas outras abas deste painel (e o cache de perfis.js).
+      if (fotos && fotos.length) LVPerfis.aplicar({ [m.slug]: { foto: fotos[0].url, galeria: fotos.slice(1).map((f) => f.url) } });
+    }
+    conteudo.addEventListener("change", async (e) => {
+      if (e.target.id !== "enviar-fotos") return;
+      const arquivos = [...e.target.files].slice(0, Math.max(0, maxFotos - fotos.length));
+      const progresso = document.getElementById("progresso-fotos");
+      let enviadas = 0;
+      for (const arq of arquivos) {
+        if (arq.size > 5 * 1024 * 1024) { LV.toast(`${arq.name}: a foto pode ter até 5 MB.`); continue; }
+        progresso.textContent = `Enviando ${enviadas + 1} de ${arquivos.length}...`;
+        const dados = new FormData();
+        dados.append("foto", arq);
+        try {
+          const resp = await fetch("api/modelo-fotos.php", { method: "POST", body: dados, credentials: "same-origin", headers: { "X-LV-Envio": "1", Accept: "application/json" } });
+          const r = await resp.json().catch(() => ({}));
+          if (resp.status === 401) return location.replace("modelo-entrar.html");
+          if (!resp.ok) { LV.toast(`${arq.name}: ${r.erro || "não deu para enviar."}`); continue; }
+          fotos = r.fotos;
+          enviadas++;
+        } catch { LV.toast(`${arq.name}: falha de conexão.`); }
+      }
+      if (enviadas) LV.toast(enviadas === 1 ? "Foto enviada!" : `${enviadas} fotos enviadas!`);
+      aplicarFotosNoSite();
+      abrir();
+    });
+    conteudo.addEventListener("click", async (e) => {
+      const capa = e.target.closest("[data-foto-capa]");
+      const apagar = e.target.closest("[data-foto-apagar]");
+      if (!capa && !apagar) return;
+      const corpo = capa ? { acao: "capa", id: Number(capa.dataset.fotoCapa) } : { acao: "apagar", id: Number(apagar.dataset.fotoApagar) };
+      if (apagar && !confirm("Apagar esta foto? Não dá para desfazer.")) return;
+      try {
+        fotos = (await LV.api("modelo-fotos.php", corpo)).fotos;
+        LV.toast(capa ? "Capa trocada!" : "Foto apagada.");
+        aplicarFotosNoSite();
+        abrir();
+      } catch (err) {
+        if (err.status === 401) return location.replace("modelo-entrar.html");
+        LV.toast(err.message);
+      }
+    });
 
     // ---------- Saques (api/modelo-saque.php) ----------
     // A modelo salva a chave Pix e pede o saque de tudo o que está disponível; a equipe paga e marca como pago.
@@ -440,6 +517,11 @@
       if (nome === "inicio" || nome === "ganhos") {
         conteudo.innerHTML = `<div class="vazio"><span class="girando" style="display:inline-block"></span><br>Carregando seus ganhos...</div>`;
         await Promise.all([carregarGanhos(), nome === "ganhos" ? carregarSaques() : null]);
+        if ((location.hash.slice(1) || "inicio") !== nome && location.hash.slice(1) in secoes) return; // trocou de aba enquanto carregava
+      }
+      if (nome === "perfil") {
+        conteudo.innerHTML = `<div class="vazio"><span class="girando" style="display:inline-block"></span></div>`;
+        await carregarFotos();
         if ((location.hash.slice(1) || "inicio") !== nome && location.hash.slice(1) in secoes) return; // trocou de aba enquanto carregava
       }
       conteudo.innerHTML = secoes[nome]();

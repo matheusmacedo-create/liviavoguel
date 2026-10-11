@@ -1,14 +1,14 @@
 /*
  * PERFIL DAS MODELOS
  * O que a modelo salva em "Meu perfil" no painel (nome artístico, cidade, sobre mim,
- * interesses e idiomas) vale sobre o que está em modelos.js. Vem de api/perfis.php;
+ * interesses, idiomas e as fotos enviadas: capa e galeria) vale sobre o que está em modelos.js. Vem de api/perfis.php;
  * no modo demonstração, do que foi salvo no painel neste mesmo navegador.
  * Quando chega, as páginas recebem o evento "lv:perfil" e se redesenham.
  * Carregar depois de modelos.js e antes do script da página.
  */
 (function () {
   const S = window.SITE;
-  const CAMPOS = ["nome", "cidade", "bio", "tags", "idiomas"];
+  const CAMPOS = ["nome", "cidade", "bio", "tags", "idiomas", "foto", "galeria"];
 
   function aplicar(perfis) {
     let mudou = false;

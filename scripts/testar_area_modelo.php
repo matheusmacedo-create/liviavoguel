@@ -24,6 +24,7 @@ require $raiz . '/api/lib/base.php';
 require $raiz . '/api/lib/modelo-conta.php';
 require $raiz . '/api/lib/chat.php';
 require $raiz . '/api/lib/saques.php';
+require $raiz . '/api/lib/fotos.php';
 
 $falhas = 0;
 $total = 0;
@@ -710,6 +711,104 @@ verificar('saque vindo de outro site: 403', $s, 403);
 foreach (['ao-vivo.php', 'perfis.php', 'salas.php'] as $publico) {
     verificar("$publico não mostra chave Pix", str_contains(json_encode(chamar($publico)[1]), '123e4567'), false);
 }
+
+// ============================================================================= fotos
+recomecar();
+criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$uploads = sys_get_temp_dir() . '/lv-uploads-' . bin2hex(random_bytes(4));
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'UPLOADS_DIR' => " . var_export($uploads, true) . "];");
+$temporarios = [];
+register_shutdown_function(static function () use ($uploads, &$temporarios): void {
+    foreach (array_merge(glob($uploads . '/modelos/*/*') ?: [], $temporarios) as $f) { @unlink($f); }
+    @rmdir($uploads . '/modelos/livia-voguel'); @rmdir($uploads . '/modelos'); @rmdir($uploads);
+});
+/** Gera uma imagem de teste e devolve o caminho. $extra é colado no fim do arquivo (para o teste do arquivo "poliglota"). */
+$imagem = static function (int $w, int $h, string $tipo = 'jpeg', string $extra = '') use (&$temporarios): string {
+    $img = imagecreatetruecolor($w, $h);
+    imagefill($img, 0, 0, imagecolorallocate($img, 200, 50, 120));
+    $arq = tempnam(sys_get_temp_dir(), 'lv-img-');
+    $temporarios[] = $arq;
+    match ($tipo) { 'jpeg' => imagejpeg($img, $arq), 'png' => imagepng($img, $arq), 'webp' => imagewebp($img, $arq) };
+    if ($extra !== '') { file_put_contents($arq, $extra, FILE_APPEND); }
+    return $arq;
+};
+$texto = static function (string $conteudo) use (&$temporarios): string {
+    $arq = tempnam(sys_get_temp_dir(), 'lv-txt-');
+    $temporarios[] = $arq;
+    file_put_contents($arq, $conteudo);
+    return $arq;
+};
+$enviarFoto = static function (string $arquivo, array $servidor = []): array {
+    $_FILES = ['foto' => ['name' => 'foto.jpg', 'type' => 'image/jpeg', 'tmp_name' => $arquivo, 'error' => UPLOAD_ERR_OK, 'size' => filesize($arquivo)]];
+    $r = chamar('modelo-fotos.php', 'POST', null, $servidor + ['CONTENT_TYPE' => 'multipart/form-data; boundary=x', 'HTTP_X_LV_ENVIO' => '1']);
+    $_FILES = [];
+    return $r;
+};
+$_GET = [];
+
+$_SESSION = ['usuario_id' => 7];
+[$s] = $enviarFoto($imagem(800, 600));
+verificar('cliente não envia foto: 401', $s, 401);
+$_SESSION = [];
+$entrar('livia@exemplo.com.br', $senhaBoa);
+[$s] = $enviarFoto($imagem(800, 600), ['HTTP_X_LV_ENVIO' => '']);
+verificar('envio sem o cabeçalho do site: 403', $s, 403);
+[$s] = $enviarFoto($imagem(800, 600), ['HTTP_ORIGIN' => 'https://site-estranho.com']);
+verificar('envio vindo de outro site: 403', $s, 403);
+
+[$s, $c] = $enviarFoto($imagem(2400, 1200));
+verificar('envio de JPG: 200 e vira a capa', [$s, count($c['fotos']), $c['fotos'][0]['capa']], [200, 1, true]);
+verificar('regravada com no máximo 1600 px', [$c['fotos'][0]['largura'], $c['fotos'][0]['altura']], [1600, 800]);
+$disco = $uploads . '/modelos/livia-voguel/' . basename($c['fotos'][0]['url']);
+verificar('arquivo gravado como JPG de verdade', [is_file($disco), (new finfo(FILEINFO_MIME_TYPE))->file($disco)], [true, 'image/jpeg']);
+verificar('nome do arquivo é aleatório e .jpg', (bool) preg_match('#^uploads/modelos/livia-voguel/[0-9a-f]{24}\.jpg$#', $c['fotos'][0]['url']), true);
+
+[$s, $c] = $enviarFoto($imagem(800, 800, 'png'));
+verificar('PNG vira JPG e entra na galeria', [$s, count($c['fotos']), $c['fotos'][1]['capa'], substr($c['fotos'][1]['url'], -4)], [200, 2, false, '.jpg']);
+[$s] = $enviarFoto($imagem(800, 800, 'webp'));
+verificar('WebP aceito', $s, 200);
+
+[$s, $c] = $enviarFoto($imagem(200, 200));
+verificar('foto pequena demais: 422', [$s, $c['campo'] ?? null], [422, 'foto']);
+[$s] = $enviarFoto($texto('isto não é uma foto'));
+verificar('arquivo de texto com nome .jpg: 422', $s, 422);
+[$s] = $enviarFoto($texto("<?php echo 'invadido'; ?>"));
+verificar('código PHP disfarçado de foto: 422', $s, 422);
+$antes = count(glob($uploads . '/modelos/livia-voguel/*'));
+[$s, $c] = $enviarFoto($imagem(600, 600, 'png', "<?php system(\$_GET['c']); ?>"));
+$nova = $uploads . '/modelos/livia-voguel/' . basename(end($c['fotos'])['url']);
+verificar('PNG com PHP colado no fim: aceito, mas regravado sem o código', [$s, str_contains((string) file_get_contents($nova), '<?php')], [200, false]);
+$_FILES = ['foto' => ['name' => 'x.jpg', 'tmp_name' => '', 'error' => UPLOAD_ERR_INI_SIZE, 'size' => 0]];
+[$s, $c] = chamar('modelo-fotos.php', 'POST', null, ['CONTENT_TYPE' => 'multipart/form-data; boundary=x', 'HTTP_X_LV_ENVIO' => '1']);
+$_FILES = [];
+verificar('arquivo acima do limite do PHP: 422 com mensagem clara', [$s, $c['erro']], [422, 'A foto pode ter até 5 MB.']);
+
+$pub = chamar('perfis.php')[1]['modelos']['livia-voguel'];
+[, $minhas] = chamar('modelo-fotos.php');
+verificar('público vê a capa e a galeria', [$pub['foto'], count($pub['galeria'])], [$minhas['fotos'][0]['url'], count($minhas['fotos']) - 1]);
+verificar('público não vê o nome do perfil se ela só enviou fotos', array_key_exists('nome', $pub), false);
+
+$segunda = $minhas['fotos'][1]['id'];
+[$s, $c] = chamar('modelo-fotos.php', 'POST', ['acao' => 'capa', 'id' => $segunda]);
+verificar('trocar a capa', [$s, $c['fotos'][0]['id'], $c['fotos'][0]['capa']], [200, $segunda, true]);
+$capaDisco = $uploads . '/modelos/livia-voguel/' . basename($c['fotos'][0]['url']);
+[$s, $c] = chamar('modelo-fotos.php', 'POST', ['acao' => 'apagar', 'id' => $segunda]);
+verificar('apagar a capa: a próxima vira capa e o arquivo some do disco', [$s, $c['fotos'][0]['capa'], is_file($capaDisco)], [200, true, false]);
+[$s] = chamar('modelo-fotos.php', 'POST', ['acao' => 'apagar', 'id' => 99999]);
+verificar('apagar foto que não existe: 404', $s, 404);
+lv_db()->exec("INSERT INTO lv_modelos_fotos (slug, arquivo, capa, ordem, largura, altura, criado_em) VALUES ('outra-modelo', 'x.jpg', 1, 1, 400, 400, '2026-01-01 00:00:00')");
+$deOutra = (int) lv_db()->lastInsertId();
+[$s] = chamar('modelo-fotos.php', 'POST', ['acao' => 'apagar', 'id' => $deOutra]);
+verificar('modelo não apaga foto de outra: 404', $s, 404);
+[$s] = chamar('modelo-fotos.php', 'POST', ['acao' => 'girar', 'id' => $segunda]);
+verificar('ação inválida: 422', $s, 422);
+
+while (lv_fotos_contar('livia-voguel') < LV_FOTO_MAX_POR_MODELO) {
+    lv_foto_adicionar('livia-voguel', 'enchimento.jpg', 400, 400);
+}
+[$s, $c] = $enviarFoto($imagem(800, 600));
+verificar('limite de 12 fotos: 409', [$s, $c['erro']], [409, 'Você já tem 12 fotos. Apague uma para enviar outra.']);
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
 
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
