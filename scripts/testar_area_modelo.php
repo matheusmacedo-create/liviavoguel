@@ -169,6 +169,29 @@ for ($i = 0; $i < LV_MODELO_ERROS_LOGIN; $i++) {
 [$s] = $entrar('livia@exemplo.com.br', $senhaBoa);
 verificar('5 erros no e-mail: espera, mesmo com a senha certa', $s, 429);
 verificar('freio não abre sessão', $_SESSION['modelo_id'] ?? null, null);
+[$s] = $entrar('livia@exemplo.com.br', $senhaBoa, ['REMOTE_ADDR' => '198.51.100.20']);
+verificar('erros vindos de um IP não trancam a modelo fora em outro lugar', $s, 200);
+
+recomecar();
+criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+for ($i = 0; $i < LV_MODELO_ERROS_LOGIN - 1; $i++) {
+    $entrar('livia@exemplo.com.br', 'errada-' . $i);
+}
+$entrar('livia@exemplo.com.br', $senhaBoa);
+$_SESSION = [];
+for ($i = 0; $i < LV_MODELO_ERROS_LOGIN - 1; $i++) {
+    $entrar('livia@exemplo.com.br', 'errada-de-novo-' . $i);
+}
+[$s] = $entrar('livia@exemplo.com.br', $senhaBoa);
+verificar('acertar a senha zera os erros daquele IP', $s, 200);
+
+recomecar();
+criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+for ($i = 0; $i < LV_LOGIN_FATOR_EMAIL * LV_MODELO_ERROS_LOGIN; $i++) {
+    $entrar('livia@exemplo.com.br', 'errada-' . $i, ['REMOTE_ADDR' => '198.51.100.' . ($i + 1)]);
+}
+[$s] = $entrar('livia@exemplo.com.br', $senhaBoa, ['REMOTE_ADDR' => '192.0.2.200']);
+verificar('ataque espalhado por muitos IPs: o e-mail trava', $s, 429);
 
 recomecar();
 criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
@@ -562,6 +585,26 @@ $esperar();
 verificar('mais de 20 mensagens por minuto: 429', $s, 429);
 $pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'chat'");
 
+// Freio sem corrida: a mesma conta em outra aba acabou de mandar (o registro dela já está lá).
+lv_registrar('chat', 'u:' . $fa);
+[$s] = $enviar('ao mesmo tempo');
+verificar('duas mensagens em paralelo da mesma conta: uma é recusada', $s, 429);
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'chat'");
+// Freio por IP: várias contas no mesmo lugar não somam um flood.
+for ($i = 0; $i < LV_CHAT_POR_MINUTO_IP; $i++) {
+    lv_registrar('chat', 'ip:203.0.113.9');
+}
+$esperar();
+[$s] = $enviar('mais uma do mesmo IP');
+verificar('mais de 60 mensagens por minuto do mesmo IP: 429', $s, 429);
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'chat'");
+// Apelido com palavra bloqueada pela modelo (ex.: telefone no apelido) aparece como "anônimo".
+$pdo->exec("UPDATE lv_usuarios SET apelido = 'meu_telefone_21' WHERE id = $fa");
+[$s, $c] = $enviar('oi gente');
+verificar('apelido com palavra bloqueada aparece como anônimo', [$s, $c['mensagem']['apelido'] ?? null, array_slice($lerChat()[1]['mensagens'], -1)[0]['apelido']], [200, 'anônimo', 'anônimo']);
+$pdo->exec("UPDATE lv_usuarios SET apelido = 'fa_1' WHERE id = $fa");
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'chat'");
+
 // Gorjeta aparece no chat com o recado; privado não aparece.
 $antes = lv_saldo($fa);
 [$s, $c] = chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 15, 'recado' => 'Linda demais']);
@@ -652,6 +695,24 @@ verificar('desbloquear: 200 e sai da lista', [$s, $c['bloqueados']], [200, []]);
 $_SESSION = sessao_cliente($bia);
 [$s] = chamar('chat-enviar.php', 'POST', ['modelo' => 'livia-voguel', 'texto' => 'obrigada']);
 verificar('desbloqueada volta a escrever', $s, 200);
+
+// Recado de gorjeta abusivo: a modelo apaga; bloquear tira também os recados de gorjeta da pessoa.
+$_SESSION = sessao_cliente($fa);
+chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 1, 'recado' => 'me chama 21 98888 7777']);
+$recado = (int) $pdo->query("SELECT MAX(id) FROM lv_chat WHERE tipo = 'gorjeta'")->fetchColumn();
+$_SESSION = $sessaoModelo;
+[$s] = $moderar(['acao' => 'apagar', 'id' => $recado]);
+verificar('modelo apaga recado de gorjeta: some da sala', [$s, in_array('me chama 21 98888 7777', $textosPublicos()[0], true)], [200, false]);
+$_SESSION = sessao_cliente($fa);
+chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 1, 'recado' => 'outro recado chato']);
+chamar('gastar.php', 'POST', ['tipo' => 'gorjeta', 'modelo' => 'livia-voguel', 'creditos' => 2]);
+$_SESSION = $sessaoModelo;
+$msgFa = lv_chat_postar('livia-voguel', $fa, 'fa_1', 'msg', 'mensagem da fa');
+$moderar(['acao' => 'bloquear', 'id' => $msgFa]);
+$textos = $textosPublicos()[0];
+verificar('bloquear tira os recados de gorjeta da pessoa; a gorjeta sem recado fica',
+    [in_array('outro recado chato', $textos, true), in_array('mensagem da fa', $textos, true), in_array('', $textos, true)], [false, false, true]);
+$moderar(['acao' => 'desbloquear', 'usuario' => $fa]);
 
 $_SESSION = $sessaoModelo;
 [$s] = $moderar(['acao' => 'sumir', 'id' => $m1]);
@@ -899,6 +960,11 @@ verificar('login da equipe não vira modelo nem cliente', [$_SESSION['modelo_id'
 verificar('equipe não abre o painel da modelo', $s, 401);
 [, $c] = chamar('equipe-eu.php');
 verificar('equipe-eu diz logada', [$c['logado'], $c['equipe']['email']], [true, 'equipe@exemplo.com.br']);
+$pdo->prepare('UPDATE lv_equipe_contas SET senha_hash = ? WHERE id = ?')->execute([password_hash($senhaEquipe, PASSWORD_DEFAULT), $idEquipe]);
+[, $c] = chamar('equipe-eu.php');
+verificar('senha da equipe trocada ou redefinida: a sessão aberta cai', $c['logado'], false);
+[$s] = $entrarEquipe('equipe@exemplo.com.br', $senhaEquipe);
+verificar('equipe entra de novo com a senha', $s, 200);
 $_SESSION['equipe_desde'] = time() - LV_EQUIPE_SESSAO_MAXIMA - 1;
 [$s] = chamar('equipe.php');
 verificar('sessão da equipe vence em 8 h', $s, 401);
@@ -982,6 +1048,23 @@ foreach ([['ana@exemplo.com.br', 'ana_rj'], ['bia@exemplo.com.br', 'bia_sp']] as
 }
 [$ana, $bia] = array_map('intval', $pdo->query('SELECT id FROM lv_usuarios ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
 
+// Apelido que imita a modelo ou a equipe não passa (ninguém pede Pix "como a modelo").
+$_SESSION = sessao_cliente($ana);
+foreach (['Livia_Voguel', 'livia123', 'LIVIA', 'suporte_site', 'x_liviavoguel_x', 'equipe1'] as $ap) {
+    [$s, $c] = chamar('conta.php', 'POST', ['apelido' => $ap]);
+    verificar("apelido que imita a modelo ou a equipe ($ap): 422", [$s, $c['campo'] ?? null], [422, 'apelido']);
+}
+[$s, $c] = chamar('conta.php', 'POST', ['apelido' => 'olivia_rj']);
+verificar('apelido parecido, mas de outra pessoa, passa', [$s, $c['usuario']['apelido'] ?? null], [200, 'olivia_rj']);
+$pdo->exec("UPDATE lv_usuarios SET apelido = 'ana_rj' WHERE id = $ana");
+$_SESSION = [];
+[$s, $c] = chamar('cadastro.php', 'POST', ['email' => 'livia.voguel@exemplo.com.br', 'senha' => 'segredo1234', 'maior18' => true]);
+verificar('cadastro com e-mail que imita a modelo ganha apelido neutro', [$s, (bool) preg_match('/^fa_\d+$/', $c['usuario']['apelido'] ?? '')], [201, true]);
+$_SESSION = [];
+[$s, $c] = chamar('cadastro.php', 'POST', ['email' => 'outra@exemplo.com.br', 'senha' => 'segredo1234', 'apelido' => 'Livia_Voguel', 'maior18' => true]);
+verificar('cadastro com o apelido da modelo: 422', [$s, $c['campo'] ?? null], [422, 'apelido']);
+$_SESSION = [];
+
 $_SESSION = [];
 [$s] = chamar('conta-email.php', 'POST', ['email_novo' => 'x@exemplo.com.br', 'senha' => $senhaCli]);
 verificar('trocar e-mail sem login: 401', $s, 401);
@@ -1035,7 +1118,7 @@ verificar('e-mail e apelido viram anônimos', [$u['email'], $u['apelido']], ["ex
 $_SESSION = [];
 [$s] = chamar('entrar.php', 'POST', ['email' => 'ana.nova@exemplo.com.br', 'senha' => $senhaCli]);
 verificar('conta excluída não entra mais', $s, 401);
-$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro' AND chave = 'e:ana.nova@exemplo.com.br'");
+$pdo->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro' AND chave LIKE '%ana.nova@exemplo.com.br%'"); // e: e ei: (e-mail+IP)
 $todo = json_encode([$pdo->query('SELECT * FROM lv_usuarios')->fetchAll(), $pdo->query('SELECT * FROM lv_chat')->fetchAll(),
     $pdo->query('SELECT * FROM lv_eventos')->fetchAll(), $pdo->query('SELECT * FROM lv_extrato')->fetchAll()], JSON_UNESCAPED_UNICODE);
 verificar('nenhum dado pessoal fica no banco (e-mail, apelido, texto do chat)',

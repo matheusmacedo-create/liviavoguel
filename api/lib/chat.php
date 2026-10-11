@@ -8,6 +8,8 @@ const LV_RECADO_MAX = 80;
 /** Freios por pessoa: intervalo mínimo entre mensagens (s) e máximo por minuto. */
 const LV_CHAT_INTERVALO = 2;
 const LV_CHAT_POR_MINUTO = 20;
+/** Máximo por minuto vindo de um mesmo IP, somando todas as contas. */
+const LV_CHAT_POR_MINUTO_IP = 60;
 /** Quantas mensagens a sala recebe de uma vez (ao abrir e a cada consulta). */
 const LV_CHAT_LOTE = 50;
 
@@ -35,8 +37,15 @@ function lv_chat_bloqueada(string $slug, string $texto): ?string
     return null;
 }
 
+/** Apelido com palavra que a modelo bloqueou (um telefone, "zap") não aparece: vira "anônimo". */
+function lv_chat_apelido(string $slug, string $apelido): string
+{
+    return lv_chat_bloqueada($slug, $apelido) !== null ? 'anônimo' : $apelido;
+}
+
 function lv_chat_postar(string $slug, ?int $usuarioId, string $apelido, string $tipo, string $texto, ?int $creditos = null): int
 {
+    $apelido = lv_chat_apelido($slug, $apelido);
     lv_db()->prepare('INSERT INTO lv_chat (slug, usuario_id, apelido, tipo, texto, creditos, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)')
         ->execute([$slug, $usuarioId, mb_substr($apelido, 0, 20), $tipo, mb_substr($texto, 0, 255), $creditos, lv_agora()]);
     return (int) lv_db()->lastInsertId();
@@ -109,7 +118,7 @@ function lv_chat_apagar(string $slug, int $id): void
     }
 }
 
-/** Bloqueia quem escreveu e apaga as mensagens dessa pessoa na sala (as gorjetas ficam). */
+/** Bloqueia quem escreveu e apaga as mensagens dessa pessoa na sala, inclusive gorjetas com recado (as sem recado ficam). */
 function lv_chat_bloquear(string $slug, int $usuarioId): void
 {
     try {
@@ -119,7 +128,7 @@ function lv_chat_bloquear(string $slug, int $usuarioId): void
             throw $e;
         }
     }
-    $stmt = lv_db()->prepare("SELECT id FROM lv_chat WHERE slug = ? AND usuario_id = ? AND tipo = 'msg'
+    $stmt = lv_db()->prepare("SELECT id FROM lv_chat WHERE slug = ? AND usuario_id = ? AND (tipo = 'msg' OR texto <> '')
         AND id NOT IN (SELECT chat_id FROM lv_chat_apagadas WHERE slug = ?)");
     $stmt->execute([$slug, $usuarioId, $slug]);
     foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {

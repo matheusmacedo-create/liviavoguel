@@ -1,7 +1,7 @@
 <?php
 /**
  * POST { email, senha } → entra na área da modelo e devolve { ok, modelo: { slug, nome, email } }.
- * Depois de 5 erros em 15 min para o mesmo e-mail (ou 15 no mesmo IP), espera.
+ * Depois de 5 erros em 15 min para o mesmo e-mail no mesmo IP (ou 15 no IP), espera: ver lv_login_tentar.
  */
 declare(strict_types=1);
 require_once __DIR__ . '/lib/base.php';
@@ -10,10 +10,8 @@ require_once __DIR__ . '/lib/modelo-conta.php';
 $b = lv_ler_json();
 $email = lv_email($b['email'] ?? '');
 $senha = is_string($b['senha'] ?? null) ? $b['senha'] : '';
-if (lv_contar_eventos('modelo_login_erro', 'e:' . $email, LV_JANELA_LOGIN) >= LV_MODELO_ERROS_LOGIN
-    || lv_contar_eventos('modelo_login_erro', 'ip:' . lv_ip(), LV_JANELA_LOGIN) >= 3 * LV_MODELO_ERROS_LOGIN) {
-    lv_falhar(429, 'Muitas tentativas. Aguarde 15 minutos e tente de novo.');
-}
+// Erros contam por e-mail+IP: quem chuta a senha dela de outro lugar não tranca a modelo fora (lv_login_tentar).
+$tentativa = lv_login_tentar('modelo_login_erro', $email, LV_MODELO_ERROS_LOGIN);
 
 $conta = false;
 if ($email !== '') {
@@ -22,12 +20,11 @@ if ($email !== '') {
     $conta = $stmt->fetch();
 }
 // Sempre compara uma senha, exista a conta ou não, para o tempo de resposta não revelar quais e-mails têm conta.
-$senhaOk = password_verify($senha, $conta ? (string) $conta['senha_hash'] : lv_modelo_hash_falso());
+$senhaOk = password_verify($senha, $conta ? (string) $conta['senha_hash'] : lv_hash_falso());
 if (!$conta || !$senhaOk || !(int) $conta['ativa']) {
-    lv_registrar('modelo_login_erro', 'e:' . $email);
-    lv_registrar('modelo_login_erro', 'ip:' . lv_ip());
     lv_falhar(401, 'E-mail ou senha incorretos.');
 }
+lv_login_acertou('modelo_login_erro', $email, $tentativa);
 
 $id = (int) $conta['id'];
 $senhaHash = (string) $conta['senha_hash'];

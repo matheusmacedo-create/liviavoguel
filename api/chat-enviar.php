@@ -27,11 +27,16 @@ if (lv_chat_bloqueada($slug, $texto) !== null) {
 if (lv_chat_bloqueado($slug, $usuarioId)) {
     lv_falhar(403, 'Você não pode mais escrever nesta sala.');
 }
+$usuario = lv_usuario($usuarioId) ?? lv_falhar(401, 'Entre na sua conta para continuar.', ['login' => true]);
+// Registra antes de contar: duas mensagens em paralelo (a mesma conta em duas abas ou aparelhos) se enxergam e uma é
+// recusada. Também por IP, para várias contas no mesmo lugar não somarem um flood.
 $chave = 'u:' . $usuarioId;
-if (lv_contar_eventos('chat', $chave, LV_CHAT_INTERVALO) > 0 || lv_contar_eventos('chat', $chave, 60) >= LV_CHAT_POR_MINUTO) {
+$chaveIp = 'ip:' . lv_ip();
+lv_registrar('chat', $chave);
+lv_registrar('chat', $chaveIp);
+if (lv_contar_eventos('chat', $chave, LV_CHAT_INTERVALO) > 1 || lv_contar_eventos('chat', $chave, 60) > LV_CHAT_POR_MINUTO
+    || lv_contar_eventos('chat', $chaveIp, 60) > LV_CHAT_POR_MINUTO_IP) {
     lv_falhar(429, 'Calma! Espere um pouquinho antes de mandar outra mensagem.');
 }
-$usuario = lv_usuario($usuarioId) ?? lv_falhar(401, 'Entre na sua conta para continuar.', ['login' => true]);
-lv_registrar('chat', $chave);
 $id = lv_chat_postar($slug, $usuarioId, (string) $usuario['apelido'], 'msg', $texto);
-lv_json(['ok' => true, 'mensagem' => ['id' => $id, 'tipo' => 'msg', 'apelido' => $usuario['apelido'], 'texto' => $texto, 'creditos' => null, 'data' => gmdate('Y-m-d\TH:i:s\Z')]]);
+lv_json(['ok' => true, 'mensagem' => ['id' => $id, 'tipo' => 'msg', 'apelido' => lv_chat_apelido($slug, (string) $usuario['apelido']), 'texto' => $texto, 'creditos' => null, 'data' => gmdate('Y-m-d\TH:i:s\Z')]]);

@@ -476,7 +476,7 @@
           <td>${esc(msg.apelido)}</td>
           <td>${msg.tipo === "gorjeta" ? `💸 ${Number(msg.creditos)} créditos${msg.texto ? ` · “${esc(msg.texto)}”` : ""}` : esc(msg.texto)}</td>
           <td style="text-align:right;white-space:nowrap">
-            ${msg.tipo === "msg" ? `<button class="btn btn-pequeno" data-apagar="${msg.id}">Apagar</button>` : ""}
+            ${msg.tipo === "msg" || msg.texto ? `<button class="btn btn-pequeno" data-apagar="${msg.id}">Apagar</button>` : ""}
             ${msg.usuario ? `<button class="btn btn-pequeno perigo" data-bloquear="${msg.id}">Bloquear</button>` : ""}
           </td></tr>`).join("")}</tbody></table></div>`
         : `<div class="vazio"><div class="icone">💬</div>Nenhuma mensagem ainda.</div>`;

@@ -111,7 +111,8 @@ $GLOBALS['LV_UNICOPAG_SIMULADA'] = static function (string $metodo, string $cami
 /** Roda um endpoint como o Apache rodaria e devolve [status, corpo]. */
 function chamar(string $arquivo, string $metodo = 'GET', ?array $corpo = null, array $get = [], array $servidor = []): array
 {
-    $_SERVER = ['REQUEST_METHOD' => $metodo, 'REMOTE_ADDR' => '203.0.113.7', 'CONTENT_TYPE' => $corpo !== null ? 'application/json' : ''] + $servidor;
+    // $servidor vem primeiro: o que o teste passar (IP, origem, tipo do corpo) vale sobre o padrão.
+    $_SERVER = $servidor + ['REQUEST_METHOD' => $metodo, 'REMOTE_ADDR' => '203.0.113.7', 'CONTENT_TYPE' => $corpo !== null ? 'application/json' : ''];
     $_GET = $get;
     $_POST = [];
     $GLOBALS['LV_CORPO_TESTE'] = $corpo !== null ? json_encode($corpo) : ($servidor['_corpo'] ?? '');
@@ -507,6 +508,18 @@ for ($i = 0; $i < 10; $i++) {
 }
 [$s] = chamar('entrar.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'segredo123']);
 verificar('10 erros de login travam o e-mail', $s, 429);
+[$s] = chamar('entrar.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'segredo123'], [], ['REMOTE_ADDR' => '198.51.100.30']);
+verificar('erros vindos de um IP não trancam a conta em outro lugar', $s, 200);
+$_SESSION = [];
+lv_db()->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro'");
+for ($i = 0; $i < 100; $i++) {
+    chamar('entrar.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'errada' . $i], [], ['REMOTE_ADDR' => '198.51.' . intdiv($i, 200) . '.' . ($i % 200 + 1)]);
+}
+[$s] = chamar('entrar.php', 'POST', ['email' => 'ana@exemplo.com.br', 'senha' => 'segredo123'], [], ['REMOTE_ADDR' => '192.0.2.77']);
+verificar('ataque espalhado por 100 IPs: o e-mail trava', $s, 429);
+[$s] = chamar('entrar.php', 'POST', ['email' => 'ninguem@exemplo.com.br', 'senha' => 'segredo123'], [], ['REMOTE_ADDR' => '192.0.2.78']);
+verificar('e-mail sem conta: 401, igual a senha errada', $s, 401);
+lv_db()->exec("DELETE FROM lv_eventos WHERE tipo = 'login_erro'");
 
 $_SESSION = sessao_cliente($ana);
 lv_db()->exec("DELETE FROM lv_eventos WHERE tipo = 'cobranca'");
@@ -515,6 +528,25 @@ for ($i = 0; $i < 15; $i++) {
 }
 [$s] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
 verificar('15 cobranças por hora travam', $s, 429);
+
+// Teste de cartões roubados: depois de LV_CARTAO_RECUSAS_DIA recusas, só Pix.
+lv_db()->exec("DELETE FROM lv_eventos WHERE tipo IN ('cobranca', 'cartao_ip', 'cartao_recusado')");
+for ($i = 0; $i < LV_CARTAO_RECUSAS_DIA; $i++) {
+    $unico['proximo'] = [200, ['payment_status' => 'refused']];
+    chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
+}
+$chamadasAntes = count($unico['chamadas']);
+[$s, $r] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
+verificar('5 cartões recusados em 24 h: 429, sem chegar à Unicopag', [$s, count($unico['chamadas'])], [429, $chamadasAntes]);
+[$s] = chamar('cobranca.php', 'POST', ['pacote' => 1, 'metodo' => 'pix'] + $comprador);
+verificar('com o cartão travado, Pix continua liberado', $s < 300, true);
+lv_db()->exec("DELETE FROM lv_eventos WHERE tipo IN ('cobranca', 'cartao_ip', 'cartao_recusado')");
+for ($i = 0; $i < LV_CARTAO_POR_HORA_IP; $i++) {
+    lv_registrar('cartao_ip', '203.0.113.7');
+}
+[$s] = chamar('cobranca.php', 'POST', ['pacote' => 0, 'metodo' => 'cartao', 'cartao' => $cartaoOk] + $comprador);
+verificar('10 tentativas de cartão no mesmo IP em 1 h (contas diferentes também): 429', $s, 429);
+lv_db()->exec("DELETE FROM lv_eventos WHERE tipo IN ('cobranca', 'cartao_ip', 'cartao_recusado')");
 
 // ============================================================================= tabelas criadas pela api/
 $comandos = lv_esquema_comandos();

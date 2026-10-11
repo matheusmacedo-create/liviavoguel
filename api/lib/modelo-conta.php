@@ -12,12 +12,6 @@ const LV_MODELO_ERROS_LOGIN = 5;
 /** Sessão da modelo dura no máximo isto, em segundos, mesmo com o navegador aberto (12 horas). */
 const LV_MODELO_SESSAO_MAXIMA = 43200;
 
-/** Hash de uma senha qualquer: compara mesmo quando o e-mail não existe, para o tempo de resposta não revelar quem tem conta. */
-function lv_modelo_hash_falso(): string
-{
-    static $hash = null;
-    return $hash ??= password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
-}
 
 function lv_modelo_conta(int $id): ?array
 {
