@@ -280,3 +280,51 @@ button.secundario { background: transparent; }
   animation: entrar .2s ease-out;
 }
 @keyframes entrar { from { transform: translateY(-6px); opacity: 0; } }
+
+/* Histórico das lives (fase 4) */
+.dlg-largo { max-width: min(1120px, 96vw); width: 100%; }
+.hist-topo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hist-topo h2 { margin: 0; }
+.hist-topo form { margin-left: auto; }
+.hist-resumo { color: var(--texto-fraco); }
+.hist-secao { margin-top: 20px; }
+.hist-secao h3 { font-size: 15px; margin: 0 0 4px; }
+.hist-secao .nota { color: var(--texto-fraco); font-size: 12px; margin: 0 0 10px; }
+.hist-tabela { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.hist-tabela th, .hist-tabela td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--borda); }
+.hist-tabela th:first-child, .hist-tabela td:first-child, .hist-tabela td:last-child, .hist-tabela th:last-child { text-align: left; }
+.hist-tabela th { color: var(--texto-fraco); font-weight: 500; font-size: 12px; }
+.hist-site { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.hist-site::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--cor-site); }
+
+.mapa {
+  display: grid;
+  grid-template-columns: 72px repeat(24, minmax(18px, 1fr));
+  gap: 2px;
+  font-size: 11px;
+  color: var(--texto-fraco);
+}
+.mapa-rotulo { display: flex; align-items: center; }
+.mapa-hora { text-align: center; }
+.mapa-celula { height: 24px; border-radius: 4px; cursor: default; }
+.mapa-celula.vazia { border: 1px dashed var(--borda); }
+.mapa-celula:hover { outline: 2px solid var(--texto); outline-offset: -1px; }
+.mapa-legenda { display: flex; align-items: center; gap: 4px; margin-top: 10px; font-size: 12px; color: var(--texto-fraco); }
+.mapa-legenda span.cor { width: 22px; height: 12px; border-radius: 3px; }
+.mapa-legenda span.cor.vazia { border: 1px dashed var(--borda); }
+.hist-melhores { margin: 0; padding-left: 20px; }
+.hist-melhores li { margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.hist-vazio { color: var(--texto-fraco); padding: 24px 0; }
+
+.dica {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
+  font-size: 12px;
+  white-space: nowrap;
+}

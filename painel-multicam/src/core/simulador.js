@@ -1,6 +1,8 @@
 // Modo demonstração: inventa mensagens e gorjetas para testar o painel sem estar ao vivo.
 // De tempos em tempos um site "esquenta" e passa a receber mais gorjetas.
 
+import { coberturaPorHora } from './historico.js';
+
 const NOMES = ['joao_sp', 'rafa77', 'gringo_tx', 'lucas.rj', 'mike_uk', 'paulinho', 'dan_cam', 'zeca10', 'tom_br', 'leo_bh', 'carlos_pt', 'andre.m'];
 const FRASES = [
   'oi linda', 'que sorriso', 'de onde você é?', 'vai ter privado hoje?', 'linda demais', 'manda um beijo',
@@ -42,4 +44,39 @@ export function criarSimulador(sites, emitir, { intervaloMs = 600, aleatorio = M
   }, intervaloMs);
 
   return { parar: () => clearInterval(timer) };
+}
+
+// Histórico inventado de 4 semanas para ver a tela de histórico no modo demonstração.
+// Fim de semana e 22h–23h rendem mais; o primeiro site rende mais que os outros.
+export function gerarHistoricoDemo(sites, { agora = Date.now(), aleatorio = Math.random } = {}) {
+  const sessoes = [];
+  for (let diasAtras = 28; diasAtras >= 1; diasAtras--) {
+    const dia = new Date(agora - diasAtras * 86_400_000);
+    if (aleatorio() < 0.3) continue; // folga
+    dia.setHours(19 + Math.floor(aleatorio() * 3), aleatorio() < 0.5 ? 0 : 30, 0, 0);
+    const inicio = dia.getTime();
+    const fim = inicio + (2 + aleatorio() * 2) * 3_600_000;
+    const fimDeSemana = [0, 5, 6].includes(dia.getDay());
+    const porHora = {};
+    const totais = Object.fromEntries(sites.map((s) => [s.id, 0]));
+    for (const { hora, minutos } of coberturaPorHora(inicio, fim)) {
+      const h = new Date(hora).getHours();
+      const pico = h >= 22 || h <= 0 ? 1.8 : h >= 21 ? 1.3 : 1;
+      porHora[hora] = {};
+      sites.forEach((s, i) => {
+        const base = (i === 0 ? 70 : 45 - i * 8) * (fimDeSemana ? 1.6 : 1) * pico;
+        const reais = Math.round(base * (0.5 + aleatorio()) * (minutos / 60));
+        porHora[hora][s.id] = reais;
+        totais[s.id] += reais;
+      });
+    }
+    sessoes.push({
+      id: inicio, inicio, fim, porHora,
+      sites: sites.map((s) => ({
+        id: s.id, nome: s.nome, reais: totais[s.id], tokens: 0, gorjetas: Math.round(totais[s.id] / 12),
+        privados: aleatorio() < 0.4 ? 1 : 0, mensagens: 0, pico: 0,
+      })),
+    });
+  }
+  return sessoes;
 }

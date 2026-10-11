@@ -93,6 +93,47 @@ ipcMain.handle('transmissao-comando', (_e, acao, site, valor) => {
   else if (acao === 'todos') repasse.ligarTodos(Boolean(valor));
 });
 
+/* ---------- Histórico das lives (fase 4) ---------- */
+
+// Um arquivo por configuração, para quem cuida de várias modelos não misturar os números.
+const arquivoHistorico = () => path.join(app.getPath('userData'), `historico-${path.basename(caminhoConfig, path.extname(caminhoConfig))}.json`);
+
+async function lerHistorico() {
+  const arquivo = arquivoHistorico();
+  try {
+    const dados = JSON.parse(await fs.readFile(arquivo, 'utf8'));
+    return Array.isArray(dados) ? dados : [];
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    // Arquivo estragado: guarda uma cópia em vez de apagar por cima na próxima gravação.
+    await fs.rename(arquivo, `${arquivo}.estragado-${Date.now()}`).catch(() => {});
+    console.error('Histórico ilegível, guardei uma cópia e comecei outro:', err.message);
+    return [];
+  }
+}
+
+const sessaoValida = (s) => s && Number.isFinite(s.id) && Number.isFinite(s.inicio) && Number.isFinite(s.fim)
+  && Array.isArray(s.sites) && s.porHora && typeof s.porHora === 'object';
+
+let filaHistorico = Promise.resolve();
+
+ipcMain.handle('historico-ler', () => filaHistorico.then(lerHistorico));
+
+ipcMain.handle('historico-salvar', (_e, sessao) => {
+  if (!sessaoValida(sessao)) return false;
+  // Uma gravação por vez; a mesma live (mesmo id) é atualizada, não duplicada.
+  filaHistorico = filaHistorico.then(async () => {
+    const lista = await lerHistorico();
+    const i = lista.findIndex((s) => s.id === sessao.id);
+    if (i >= 0) lista[i] = sessao; else lista.push(sessao);
+    const arquivo = arquivoHistorico();
+    await fs.mkdir(path.dirname(arquivo), { recursive: true });
+    await fs.writeFile(`${arquivo}.tmp`, JSON.stringify(lista));
+    await fs.rename(`${arquivo}.tmp`, arquivo);
+  }).catch((err) => console.error('Não consegui guardar a live no histórico:', err.message));
+  return filaHistorico.then(() => true);
+});
+
 function enviar(win, canal, dados) {
   if (!win.isDestroyed()) win.webContents.send(canal, dados);
 }

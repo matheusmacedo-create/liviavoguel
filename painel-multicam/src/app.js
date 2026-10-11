@@ -3,8 +3,9 @@
 
 import { criarMetricas } from './core/metricas.js';
 import { interpretar } from './core/leitura.js';
-import { criarSimulador } from './core/simulador.js';
-import { resumoParaCSV } from './core/csv.js';
+import { criarSimulador, gerarHistoricoDemo } from './core/simulador.js';
+import { resumoParaCSV, historicoParaCSV } from './core/csv.js';
+import { analisar, nomeHorario, DIAS } from './core/historico.js';
 import { saidasDesejadas, motivoParado } from './core/transmissao.js';
 
 const parametros = new URLSearchParams(location.search);
@@ -31,7 +32,7 @@ function el(tag, props = {}, ...filhos) {
   for (const [k, v] of Object.entries(props)) {
     if (k === 'class') n.className = v;
     else if (k === 'cor') n.style.setProperty('--cor-site', v);
-    else if (k.startsWith('data-')) n.setAttribute(k, v);
+    else if (k.startsWith('data-') || k.startsWith('aria-')) n.setAttribute(k, v);
     else n[k] = v;
   }
   for (const f of filhos) if (f != null) n.append(f);
@@ -409,6 +410,142 @@ function alternarSom() {
   abrirAba(abaAtiva);
 }
 
+/* ---------- Histórico das lives (fase 4) ---------- */
+
+// Escala de um azul só (fundo escuro): pouco dinheiro some no fundo, muito dinheiro fica claro.
+const ESCALA = ['#0d366b', '#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'];
+const horasBR = (h) => `${h.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h`;
+let historicoDemo = null;
+let ultimoHistorico = [];
+
+function guardarSessao() {
+  if (modoDemo || !ponte?.historico || !metricas.temDados()) return Promise.resolve();
+  return ponte.historico.salvar(metricas.resumo());
+}
+
+async function carregarHistorico() {
+  let lista;
+  if (modoDemo) lista = (historicoDemo ??= gerarHistoricoDemo(sites));
+  else lista = ponte?.historico ? await ponte.historico.ler() : [];
+  // A live de agora entra também, mesmo antes de ser guardada, depois de 10 minutos
+  // (antes disso, poucas gorjetas viram um "R$ por hora" enganoso).
+  if (metricas.temDados() && Date.now() - metricas.inicio >= 10 * 60_000) {
+    const atual = metricas.resumo();
+    lista = [...lista.filter((s) => s.id !== atual.id), atual];
+  }
+  return lista;
+}
+
+const dica = $('#dica');
+function mostrarDica(evento, texto) {
+  dica.textContent = texto;
+  dica.hidden = false;
+  const x = Math.min(evento.clientX + 14, window.innerWidth - dica.offsetWidth - 8);
+  dica.style.left = `${x}px`;
+  dica.style.top = `${evento.clientY + 16}px`;
+}
+const esconderDica = () => { dica.hidden = true; };
+
+function desenharMapa({ grade, maiorReaisPorHora: maior, minimoHoras }) {
+  const corDe = (rph) => (rph <= 0 || !maior ? ESCALA[0] : ESCALA[1 + Math.min(5, Math.floor((rph / maior) * 6))]);
+
+  const mapa = el('div', { class: 'mapa', role: 'img', 'aria-label': 'R$ por hora de live em cada dia da semana e hora' });
+  mapa.append(el('span'));
+  for (let h = 0; h < 24; h++) mapa.append(el('span', { class: 'mapa-hora', textContent: h % 3 === 0 ? `${h}h` : '' }));
+  grade.forEach((linha, dia) => {
+    mapa.append(el('span', { class: 'mapa-rotulo', textContent: DIAS[dia] }));
+    linha.forEach((c, hora) => {
+      const celula = el('span', { class: 'mapa-celula' });
+      let texto;
+      if (c.horas > 0) {
+        celula.style.background = corDe(c.reaisPorHora);
+        texto = `${nomeHorario(dia, hora)}: ${brl.format(c.reaisPorHora)}/h · ${brl.format(c.reais)} em ${horasBR(c.horas)} de live`;
+        if (c.horas < minimoHoras) texto += ' (pouca live para comparar)';
+      } else {
+        celula.classList.add('vazia');
+        texto = `${nomeHorario(dia, hora)}: sem live`;
+      }
+      celula.addEventListener('mousemove', (e) => mostrarDica(e, texto));
+      celula.addEventListener('mouseleave', esconderDica);
+      mapa.append(celula);
+    });
+  });
+
+  const legenda = el('div', { class: 'mapa-legenda' },
+    el('span', { class: 'cor vazia' }), el('span', { textContent: 'sem live' }), el('span', { textContent: ' · ' }),
+    el('span', { textContent: 'R$ 0/h' }),
+    ...ESCALA.map((cor) => { const c = el('span', { class: 'cor' }); c.style.background = cor; return c; }),
+    el('span', { textContent: `${brl.format(maior)}/h ou mais` }));
+  return [mapa, legenda];
+}
+
+function desenharHistorico(lista) {
+  const r = analisar(lista);
+  $('#hist-resumo').textContent = r.sessoes
+    ? `${r.sessoes} live${r.sessoes === 1 ? '' : 's'} · ${horasBR(r.horasTotais)} · ${brl.format(r.reaisTotais)}`
+    : '';
+  const conteudo = $('#hist-conteudo');
+  if (!r.sessoes) {
+    conteudo.replaceChildren(el('p', { class: 'hist-vazio', textContent: 'Ainda não tem live guardada. O painel guarda cada live sozinho, a cada minuto e ao fechar.' }));
+    return;
+  }
+
+  const linhasSites = r.sites.map((s) => el('tr', {},
+    el('td', {}, el('span', { class: 'hist-site', cor: porId.get(s.id)?.cor ?? '#888', textContent: s.nome })),
+    el('td', { textContent: brl.format(s.reaisPorHora) }),
+    el('td', { textContent: brl.format(s.reais) }),
+    el('td', { textContent: String(s.gorjetas) }),
+    el('td', { textContent: String(s.privados) }),
+    el('td', { textContent: s.melhor ? `${nomeHorario(s.melhor.dia, s.melhor.hora)} (${brl.format(s.melhor.reaisPorHora)}/h)` : '—' })));
+
+  const tabela = el('table', { class: 'hist-tabela' },
+    el('thead', {}, el('tr', {}, ...['Site', 'R$ por hora', 'Total', 'Gorjetas', 'Privados', 'Melhor horário'].map((t) => el('th', { textContent: t })))),
+    el('tbody', {}, ...linhasSites));
+
+  const melhores = r.melhores.length
+    ? el('ol', { class: 'hist-melhores' }, ...r.melhores.map((c) => el('li', {
+      textContent: `${nomeHorario(c.dia, c.hora)} · ${brl.format(c.reaisPorHora)}/h · ${horasBR(c.horas)} de live`,
+    })))
+    : el('p', { class: 'nota', textContent: 'Ainda é pouca live em cada horário para dizer. Continue usando o painel.' });
+
+  conteudo.replaceChildren(
+    el('section', { class: 'hist-secao' },
+      el('h3', { textContent: 'Quanto cada site rende por hora de live' }),
+      el('p', { class: 'nota', textContent: 'Conta a live inteira para cada site, como se ele tivesse ficado no ar o tempo todo.' }),
+      tabela),
+    el('section', { class: 'hist-secao' },
+      el('h3', { textContent: 'Quando a live rende mais (todos os sites juntos, R$ por hora)' }),
+      el('p', { class: 'nota', textContent: 'Passe o mouse num quadrado para ver o valor.' }),
+      ...desenharMapa(r)),
+    el('section', { class: 'hist-secao' },
+      el('h3', { textContent: 'Melhores horários para a agenda' }),
+      el('p', { class: 'nota', textContent: 'Só entram horários com pelo menos meia hora de live somada.' }),
+      melhores));
+}
+
+$('#btn-historico').onclick = async () => {
+  await guardarSessao();
+  ultimoHistorico = await carregarHistorico();
+  desenharHistorico(ultimoHistorico);
+  $('#dlg-historico').showModal();
+};
+
+$('#btn-exportar-historico').onclick = async () => {
+  const csv = historicoParaCSV(ultimoHistorico);
+  const nome = `historico-${new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-')}.csv`;
+  if (ponte) {
+    const salvo = await ponte.salvarCSV(nome, csv);
+    if (salvo) mostrarAviso(`Histórico salvo em ${salvo}`);
+    return;
+  }
+  const link = el('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: nome });
+  link.click();
+  URL.revokeObjectURL(link.href);
+};
+
+setInterval(guardarSessao, 60_000);
+window.addEventListener('beforeunload', () => { guardarSessao(); });
+
 /* ---------- Sessão ---------- */
 
 function receber(ev) {
@@ -426,6 +563,7 @@ function nomeArquivo() {
 }
 
 $('#btn-exportar').onclick = async () => {
+  guardarSessao();
   const csv = resumoParaCSV(metricas.resumo());
   if (ponte) {
     const salvo = await ponte.salvarCSV(nomeArquivo(), csv);
@@ -438,7 +576,8 @@ $('#btn-exportar').onclick = async () => {
 };
 
 $('#btn-zerar').onclick = () => {
-  if (!confirm('Zerar a sessão? Os números somem. Exporte o CSV antes se quiser guardar.')) return;
+  if (!confirm('Zerar a sessão? A live atual fica guardada no histórico e o painel começa uma nova.')) return;
+  guardarSessao();
   metricas = criarMetricas({ ...config, sites });
   feed.replaceChildren();
   btnNovas.hidden = true;

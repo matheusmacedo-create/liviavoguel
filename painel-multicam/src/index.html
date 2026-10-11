@@ -14,6 +14,7 @@
       <div><span class="rotulo">Total da sessão</span><strong id="total-sessao">R$ 0,00</strong></div>
     </div>
     <div class="topo-acoes">
+      <button id="btn-historico" type="button">Histórico</button>
       <button id="btn-exportar" type="button">Exportar sessão (CSV)</button>
       <button id="btn-zerar" type="button" class="secundario">Zerar sessão</button>
     </div>
@@ -71,6 +72,18 @@
     </ol>
     <p class="dlg-nota">As chaves de cada site ficam em <code>config/segredos.local.json</code> (veja o README).</p>
     <form method="dialog"><button>Fechar</button></form>
+  </dialog>
+
+  <dialog id="dlg-historico" class="dlg dlg-largo">
+    <div class="hist-topo">
+      <h2>Histórico das lives</h2>
+      <span id="hist-resumo" class="hist-resumo"></span>
+      <button id="btn-exportar-historico" type="button" class="secundario">Exportar histórico (CSV)</button>
+      <form method="dialog"><button>Fechar</button></form>
+    </div>
+    <div id="hist-conteudo"></div>
+    <!-- Dentro da janela: o que fica fora dela é coberto enquanto ela está aberta. -->
+    <div id="dica" class="dica" hidden></div>
   </dialog>
 
   <script type="module" src="app.js"></script>
