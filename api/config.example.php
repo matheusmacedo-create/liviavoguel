@@ -15,6 +15,10 @@ return [
     // Endereço público do site, sem barra no fim (monta a postback_url e confere a origem dos pedidos).
     'SITE_URL' => 'https://seudominio.com.br',
 
+    // Área da modelo: quanto a modelo recebe por crédito ganho (gorjeta ou minuto de privado), em centavos.
+    // 20 = R$ 0,20. Vazio = 20.
+    'MODELO_REPASSE_CENTAVOS' => '',
+
     // Só para a compra de teste: os e-mails desta lista pagam PRECO_TESTE_CENTAVOS em qualquer pacote
     // (ex.: 100 = R$ 1,00). Todo outro visitante paga o preço real. Volte para '' e [] depois do teste.
     'PRECO_TESTE_CENTAVOS' => '',

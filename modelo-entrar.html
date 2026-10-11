@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Área da modelo — Entrar</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body data-sem-aviso="1">
+  <main class="auth">
+    <div class="auth-arte">
+      <div>
+        <h2>Área da modelo</h2>
+        <ul>
+          <li>● Abra e feche a sua sala</li>
+          <li>● Veja seus ganhos e gorjetas</li>
+          <li>● Edite seu perfil e a agenda</li>
+        </ul>
+      </div>
+    </div>
+    <div class="auth-form">
+      <form class="auth-card" id="form" novalidate>
+        <h1>Entrar como modelo</h1>
+        <p>Use o e-mail e a senha que a equipe do site te passou.</p>
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input id="email" type="email" autocomplete="username" required placeholder="voce@email.com">
+        </div>
+        <div class="campo">
+          <label for="senha">Senha</label>
+          <input id="senha" type="password" autocomplete="current-password" required placeholder="Sua senha">
+        </div>
+        <button class="btn btn-primario btn-bloco" id="entrar">Entrar</button>
+        <div class="auth-rodape">
+          Esqueceu a senha? Fale com o suporte em <a class="link" id="suporte" href="#"></a>.<br>
+          É cliente? <a class="link" href="entrar.html">Entre por aqui</a>.
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    LV.montar("");
+    const S = window.SITE;
+    const $ = (id) => document.getElementById(id);
+    $("suporte").textContent = S.emailSuporte;
+    $("suporte").href = "mailto:" + S.emailSuporte;
+
+    // Já logada? Vai direto para o painel.
+    if (S.modoDemo ? LV.ler("lv_modelo_demo") : false) location.replace("painel-modelo.html");
+    else if (!S.modoDemo) LV.api("modelo-eu.php").then((r) => { if (r.logado) location.replace("painel-modelo.html"); }).catch(() => {});
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = $("email").value.trim();
+      const senha = $("senha").value;
+      if (!/^\S+@\S+\.\S+$/.test(email) || !senha) return LV.toast("Informe o e-mail e a senha.");
+
+      const botao = $("entrar");
+      botao.disabled = true;
+      botao.innerHTML = `<span class="girando"></span> Entrando...`;
+      try {
+        if (S.modoDemo) {
+          // Demonstração: qualquer e-mail e senha entram, só neste navegador.
+          LV.gravar("lv_modelo_demo", JSON.stringify({ slug: window.MODELOS[0].slug, nome: window.MODELOS[0].nome, email }));
+        } else {
+          await LV.api("modelo-entrar.php", { email, senha });
+        }
+        location.replace("painel-modelo.html");
+      } catch (err) {
+        botao.disabled = false;
+        botao.textContent = "Entrar";
+        $("senha").value = "";
+        LV.toast(err.message);
+      }
+    });
+  </script>
+</body>
+</html>

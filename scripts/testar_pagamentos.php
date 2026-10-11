@@ -1,4 +1,3 @@
-#!/usr/bin/env php
 <?php
 /**
  * Testes do backend de pagamentos (api/): sem rede, sem MySQL e sem segredos.
@@ -8,6 +7,12 @@
  * SQLite em memória com as mesmas tabelas de api/schema.sql, e a configuração é um arquivo descartável.
  */
 declare(strict_types=1);
+
+// Só pela linha de comando: pelo navegador (se o .htaccess faltar), responde 404 e não roda nada.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
 
 const LV_TESTE = true;
 $raiz = dirname(__DIR__);

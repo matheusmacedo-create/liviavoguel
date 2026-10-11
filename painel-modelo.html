@@ -4,20 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Área da modelo</title>
-  <meta name="robots" content="noindex">
+  <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="assets/img/logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
-  <main class="container conta">
+  <main class="container conta" id="painel" hidden>
     <nav class="lateral" id="lateral">
       <a href="#inicio">Painel</a>
       <a href="#transmitir">Transmitir</a>
       <a href="#ganhos">Ganhos</a>
       <a href="#perfil">Meu perfil</a>
       <a href="#sala">Configurar sala</a>
+      <a href="#seguranca">Senha e acesso</a>
     </nav>
     <section id="conteudo"></section>
   </main>
@@ -27,18 +28,78 @@
   <script src="assets/js/app.js"></script>
   <script>
     /*
-     * ÁREA DA MODELO (só visual por enquanto)
-     * Depois do backend: login próprio da modelo, status online automático,
-     * ganhos reais e edição do perfil salvando no banco em vez de modelos.js.
+     * ÁREA DA MODELO
+     * Só abre com o login da modelo (modelo-entrar.html → api/modelo-entrar.php), que é
+     * separado do login de cliente. Ganhos, status e edição do perfil ainda são visuais:
+     * quando ganharem endpoints, cada um confere a sessão da modelo no servidor (lv_exigir_modelo).
      */
     LV.montar("");
     const { esc, reais } = LV;
-    const m = window.MODELOS[0];
+    const S = window.SITE;
+    let conta = null; // { slug, nome, email } da modelo logada
+    let m = null;     // dados públicos dela, de modelos.js
     const conteudo = document.getElementById("conteudo");
     const online = () => LV.ler("lv_painel_online", m.online ? "1" : "0") === "1";
 
-    // Repasse da modelo sobre cada crédito (ajuste conforme o contrato)
-    const VALOR_CREDITO_MODELO = 0.2;
+    // ---------- Ganhos (api/modelo-ganhos.php) ----------
+    // O servidor soma as gorjetas e os minutos de privado que a modelo recebeu e converte
+    // para reais pelo repasse (MODELO_REPASSE_CENTAVOS no config.php). No modo demonstração,
+    // a conta é feita aqui com o extrato simulado deste navegador.
+    const PERIODOS = { "7d": "Últimos 7 dias", mes: "Este mês", mes_passado: "Mês passado" };
+    let periodo = "7d";
+    let ganhos = null; // última resposta de modelo-ganhos.php
+    const dinheiro = (centavos) => reais(centavos / 100);
+    const tipoTexto = (t) => (t === "privado" ? "Privado (1 min)" : "Gorjeta");
+    // Sempre no horário de Brasília, como as somas de "hoje" e "este mês" no servidor.
+    const horaBrasilia = (iso) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" });
+
+    function ganhosDemo(nome) {
+      const repasse = 20;
+      const agora = new Date();
+      const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+      const inicio = { "7d": new Date(hoje - 6 * 864e5), mes: new Date(agora.getFullYear(), agora.getMonth(), 1),
+        mes_passado: new Date(agora.getFullYear(), agora.getMonth() - 1, 1) };
+      const fim = { mes_passado: new Date(agora.getFullYear(), agora.getMonth(), 1) };
+      const recebidos = LV.extrato()
+        .filter((l) => l.valor < 0 && l.descricao.includes(m.nome))
+        .map((l) => ({ data: l.data, tipo: l.descricao.startsWith("Show privado") ? "privado" : "gorjeta",
+          cliente: (LV.usuario() || {}).apelido || "você", creditos: -l.valor, centavos: -l.valor * repasse }));
+      const soma = (de, ate, tipo) => {
+        const lista = recebidos.filter((l) => (!de || new Date(l.data) >= de) && (!ate || new Date(l.data) < ate) && (!tipo || l.tipo === tipo));
+        const creditos = lista.reduce((t, l) => t + l.creditos, 0);
+        return { creditos, centavos: creditos * repasse, quantidade: lista.length, lista };
+      };
+      const p = soma(inicio[nome], fim[nome]);
+      return {
+        repasse_centavos: repasse,
+        resumo: { hoje: soma(hoje), mes: soma(inicio.mes), total: soma(), privado_mes: soma(inicio.mes, null, "privado") },
+        periodo: { nome, soma: p, lancamentos: p.lista },
+        ultimas: recebidos.slice(0, 5)
+      };
+    }
+
+    async function carregarGanhos() {
+      if (S.modoDemo) return (ganhos = ganhosDemo(periodo));
+      try {
+        ganhos = await LV.api("modelo-ganhos.php?periodo=" + encodeURIComponent(periodo));
+      } catch (err) {
+        if (err.status === 401) location.replace("modelo-entrar.html");
+        ganhos = null;
+        LV.toast(err.message);
+      }
+      return ganhos;
+    }
+
+    function tabelaGanhos(lista, vazio) {
+      if (!lista.length) return `<div class="vazio"><div class="icone">💸</div>${vazio}</div>`;
+      return `<div class="tabela-rolagem"><table class="tabela">
+        <thead><tr><th>Data</th><th>De</th><th>Tipo</th><th class="col-opcional" style="text-align:right">Créditos</th><th style="text-align:right">Você recebe</th></tr></thead>
+        <tbody>${lista.map((l) => `
+          <tr><td>${horaBrasilia(l.data)}</td><td>${esc(l.cliente)}</td><td>${tipoTexto(l.tipo)}</td>
+          <td class="col-opcional" style="text-align:right">${l.creditos}</td><td style="text-align:right;white-space:nowrap" class="mais">${dinheiro(l.centavos)}</td></tr>`).join("")}
+        </tbody></table></div>`;
+    }
+    const semGanhos = `<div class="vazio"><div class="icone">⚠️</div>Não foi possível carregar os ganhos agora. <a class="link" href="#" data-recarregar>Tentar de novo</a></div>`;
 
     const secoes = {
       inicio: () => `
@@ -46,16 +107,17 @@
           <h1>Olá, ${esc(m.nome.split(" ")[0])} 👋</h1>
           <label class="chave"><input type="checkbox" id="status" ${online() ? "checked" : ""}><span class="trilho"></span><span id="status-txt">${online() ? "Ao vivo" : "Offline"}</span></label>
         </div>
+        ${ganhos ? `
         <div class="cards-numeros">
-          <div class="numero destaque"><small>Ganhos hoje</small><strong>${reais(0)}</strong></div>
-          <div class="numero"><small>Ganhos no mês</small><strong>${reais(0)}</strong></div>
-          <div class="numero"><small>Seguidores</small><strong>0</strong></div>
-          <div class="numero"><small>Minutos de privado (mês)</small><strong>0</strong></div>
+          <div class="numero destaque"><small>Ganhos hoje</small><strong>${dinheiro(ganhos.resumo.hoje.centavos)}</strong></div>
+          <div class="numero"><small>Ganhos no mês</small><strong>${dinheiro(ganhos.resumo.mes.centavos)}</strong></div>
+          <div class="numero"><small>Gorjetas no mês</small><strong>${ganhos.resumo.mes.quantidade - ganhos.resumo.privado_mes.quantidade}</strong></div>
+          <div class="numero"><small>Minutos de privado (mês)</small><strong>${ganhos.resumo.privado_mes.quantidade}</strong></div>
         </div>
         <div class="painel">
-          <div class="painel-topo"><h2>Últimas gorjetas</h2><a class="link" href="#ganhos">Ver tudo</a></div>
-          <div class="vazio"><div class="icone">💸</div>As gorjetas aparecem aqui em tempo real quando você estiver ao vivo.</div>
-        </div>
+          <div class="painel-topo"><h2>Últimos recebimentos</h2><a class="link" href="#ganhos">Ver tudo</a></div>
+          ${tabelaGanhos(ganhos.ultimas, "Nenhuma gorjeta ainda. Elas aparecem aqui quando você estiver ao vivo.")}
+        </div>` : semGanhos}
         <div class="painel">
           <h2>Próximas transmissões</h2>
           <ul class="lista-agenda">${m.agenda.map((a) => `<li><span>${esc(a.dia)}</span><strong>${esc(a.hora)}</strong></li>`).join("")}</ul>
@@ -90,19 +152,26 @@
           </div>
         </div>`,
 
-      ganhos: () => `
+      ganhos: () => !ganhos ? semGanhos : `
         <div class="cards-numeros">
-          <div class="numero destaque"><small>Disponível para saque</small><strong>${reais(0)}</strong></div>
-          <div class="numero"><small>A liberar</small><strong>${reais(0)}</strong></div>
-          <div class="numero"><small>Total recebido</small><strong>${reais(0)}</strong></div>
+          <div class="numero destaque"><small>Hoje</small><strong>${dinheiro(ganhos.resumo.hoje.centavos)}</strong></div>
+          <div class="numero"><small>Este mês</small><strong>${dinheiro(ganhos.resumo.mes.centavos)}</strong></div>
+          <div class="numero"><small>Total desde o início</small><strong>${dinheiro(ganhos.resumo.total.centavos)}</strong></div>
         </div>
         <div class="painel">
           <div class="painel-topo"><h2>Extrato</h2>
-            <select class="btn btn-pequeno" aria-label="Período"><option>Últimos 7 dias</option><option>Este mês</option><option>Mês passado</option></select></div>
-          <div class="vazio"><div class="icone">📊</div>Nenhum ganho no período.<br>Cada crédito recebido vale ${reais(VALOR_CREDITO_MODELO)} para você.</div>
+            <select class="btn btn-pequeno" id="periodo" aria-label="Período">
+              ${Object.entries(PERIODOS).map(([v, t]) => `<option value="${v}" ${v === periodo ? "selected" : ""}>${t}</option>`).join("")}
+            </select></div>
+          <div class="privado-info" style="margin:0 0 14px">
+            <div><span>${PERIODOS[periodo]}</span><strong>${ganhos.periodo.soma.creditos} créditos · ${dinheiro(ganhos.periodo.soma.centavos)}</strong></div>
+          </div>
+          ${tabelaGanhos(ganhos.periodo.lancamentos, "Nenhum ganho neste período.")}
+          <p style="color:var(--texto-2);font-size:.85rem;margin-top:12px">Cada crédito recebido vale ${dinheiro(ganhos.repasse_centavos)} para você. Horários de Brasília.</p>
         </div>
         <div class="painel">
           <h2>Dados para saque (Pix)</h2>
+          <p style="color:var(--texto-2);font-size:.9rem;margin-bottom:14px">Por enquanto, os saques são combinados com a equipe do site.</p>
           <div class="linha">
             <div class="campo"><label for="tipo-chave">Tipo de chave</label><select id="tipo-chave"><option>CPF</option><option>E-mail</option><option>Celular</option><option>Aleatória</option></select></div>
             <div class="campo"><label for="chave-pix">Chave Pix</label><input id="chave-pix"></div>
@@ -128,6 +197,22 @@
           <button class="btn btn-primario" data-salvar>Salvar perfil</button>
         </form>`,
 
+      seguranca: () => `
+        <form class="painel" id="form-senha" novalidate>
+          <h2>Trocar senha</h2>
+          <p style="color:var(--texto-2);margin-bottom:14px">Você está conectada como <strong>${esc(conta.email)}</strong>.</p>
+          <div class="linha">
+            <div class="campo"><label for="senha-atual">Senha atual</label><input id="senha-atual" type="password" autocomplete="current-password"></div>
+            <div class="campo"><label for="senha-nova">Nova senha</label><input id="senha-nova" type="password" autocomplete="new-password" minlength="8"><span class="ajuda">8 caracteres ou mais</span></div>
+          </div>
+          <button class="btn btn-primario">Trocar senha</button>
+        </form>
+        <div class="painel">
+          <h2>Sair</h2>
+          <p style="color:var(--texto-2);margin-bottom:14px">Por segurança, o acesso vence sozinho em 12 horas. Em computador de outra pessoa, saia sempre ao terminar.</p>
+          <button class="btn perigo" id="sair-modelo">Sair da área da modelo</button>
+        </div>`,
+
       sala: () => `
         <form class="painel" novalidate>
           <h2>Configurar sala</h2>
@@ -142,13 +227,24 @@
         </form>`
     };
 
-    function abrir() {
+    async function abrir() {
       const nome = location.hash.slice(1) in secoes ? location.hash.slice(1) : "inicio";
       document.querySelectorAll("#lateral a").forEach((a) => a.classList.toggle("ativo", a.hash === "#" + nome));
+      if (nome === "inicio" || nome === "ganhos") {
+        conteudo.innerHTML = `<div class="vazio"><span class="girando" style="display:inline-block"></span><br>Carregando seus ganhos...</div>`;
+        await carregarGanhos();
+        if ((location.hash.slice(1) || "inicio") !== nome && location.hash.slice(1) in secoes) return; // trocou de aba enquanto carregava
+      }
       conteudo.innerHTML = secoes[nome]();
     }
 
+    conteudo.addEventListener("change", async (e) => {
+      if (e.target.id !== "periodo") return;
+      periodo = e.target.value;
+      abrir();
+    });
     conteudo.addEventListener("click", (e) => {
+      if (e.target.closest("[data-recarregar]")) { e.preventDefault(); abrir(); }
       if (e.target.closest("[data-salvar]")) { e.preventDefault(); LV.toast("Salvar fica ativo quando o backend estiver pronto. Por enquanto edite assets/js/modelos.js."); }
       const c = e.target.closest("[data-copiar]");
       if (c) { navigator.clipboard?.writeText(document.getElementById(c.dataset.copiar).value); LV.toast("Copiado!"); }
@@ -165,8 +261,43 @@
         LV.toast(e.target.checked ? "Você está ao vivo!" : "Sala fechada.");
       }
     });
-    window.addEventListener("hashchange", abrir);
-    abrir();
+    conteudo.addEventListener("submit", async (e) => {
+      if (e.target.id !== "form-senha") return;
+      e.preventDefault();
+      const atual = document.getElementById("senha-atual").value;
+      const nova = document.getElementById("senha-nova").value;
+      if (nova.length < 8) return LV.toast("A nova senha precisa de 8 caracteres ou mais.");
+      if (S.modoDemo) { e.target.reset(); return LV.toast("Senha trocada (demonstração)."); }
+      try {
+        await LV.api("modelo-senha.php", { senha_atual: atual, senha_nova: nova });
+        e.target.reset();
+        LV.toast("Senha trocada!");
+      } catch (err) {
+        if (err.status === 401) return location.replace("modelo-entrar.html");
+        LV.toast(err.message);
+      }
+    });
+    conteudo.addEventListener("click", async (e) => {
+      if (e.target.id !== "sair-modelo") return;
+      if (S.modoDemo) LV.gravar("lv_modelo_demo", "");
+      else await LV.api("modelo-sair.php", {}).catch(() => {});
+      location.replace("modelo-entrar.html");
+    });
+
+    // Confere o login da modelo antes de mostrar qualquer coisa.
+    async function verificar() {
+      if (S.modoDemo) {
+        try { conta = JSON.parse(LV.ler("lv_modelo_demo", "") || "null"); } catch { conta = null; }
+      } else {
+        try { conta = (await LV.api("modelo-eu.php")).modelo; } catch { conta = null; }
+      }
+      m = conta && window.MODELOS.find((x) => x.slug === conta.slug);
+      if (!m) return location.replace("modelo-entrar.html");
+      document.getElementById("painel").hidden = false;
+      window.addEventListener("hashchange", abrir);
+      abrir();
+    }
+    verificar();
   </script>
 </body>
 </html>
