@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar</title>
+  <meta name="rating" content="adult">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="auth">
+    <div class="auth-arte">
+      <div>
+        <h2>Que bom te ver de novo 💜</h2>
+        <ul>
+          <li>● Seus créditos ficam guardados na conta</li>
+          <li>● Converse no chat e mande gorjetas</li>
+          <li>● Chame para o show privado quando quiser</li>
+        </ul>
+      </div>
+    </div>
+    <div class="auth-form">
+      <form class="auth-card" id="form" novalidate>
+        <h1>Entrar</h1>
+        <p>Acesse sua conta para assistir, conversar e usar seus créditos.</p>
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input id="email" type="email" autocomplete="email" required placeholder="voce@email.com">
+        </div>
+        <div class="campo">
+          <label for="senha">Senha</label>
+          <input id="senha" type="password" autocomplete="current-password" required minlength="6" placeholder="Sua senha">
+        </div>
+        <div style="text-align:right;margin:-6px 0 16px"><a class="link" href="recuperar-senha.html" style="font-size:.88rem">Esqueci minha senha</a></div>
+        <button class="btn btn-primario btn-bloco">Entrar</button>
+        <div class="auth-rodape">Ainda não tem conta? <a class="link" href="cadastro.html">Criar conta grátis</a></div>
+      </form>
+    </div>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    LV.montar("");
+    const volta = new URLSearchParams(location.search).get("volta");
+    // Só aceita voltar para páginas do próprio site
+    const destino = volta && /^[\w-]+\.html(\?[\w=&%.-]*)?$/.test(volta) ? volta : "index.html";
+
+    document.getElementById("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const senha = document.getElementById("senha").value;
+      if (!/^\S+@\S+\.\S+$/.test(email) || senha.length < 6) {
+        LV.toast("Confira o e-mail e a senha (mínimo 6 caracteres).");
+        return;
+      }
+      if (window.SITE.modoDemo) {
+        const salvo = LV.usuario();
+        LV.entrar({ apelido: salvo?.email === email ? salvo.apelido : email.split("@")[0], email });
+        location.href = destino;
+      }
+      // Fora do modo demonstração: POST api/entrar.php (feito na integração).
+    });
+  </script>
+</body>
+</html>

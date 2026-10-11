@@ -42,14 +42,13 @@
         <div class="qtd">${p.creditos + p.bonus} <small>créditos</small></div>
         <div class="bonus">${p.bonus ? `+${p.bonus} de bônus incluídos` : ""}</div>
         <div class="preco">${reais(p.preco)}</div>
+        <div style="color:var(--texto-2);font-size:.8rem;margin:-10px 0 16px">${reais(p.preco / (p.creditos + p.bonus))} por crédito</div>
         <button class="btn ${p.popular ? "btn-primario" : ""} btn-bloco" data-i="${i}">Comprar</button>
       </div>`).join("");
 
     document.getElementById("pacotes").addEventListener("click", (e) => {
       const b = e.target.closest("[data-i]"); if (!b) return;
-      const p = pacotes[b.dataset.i];
-      if (p.checkoutUrl) location.href = p.checkoutUrl;
-      else LV.toast("Pagamento ainda não configurado. Adicione o link do gateway em assets/js/config.js.");
+      location.href = "checkout.html?p=" + b.dataset.i;
     });
   </script>
 </body>
