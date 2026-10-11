@@ -13,7 +13,7 @@ Site de transmissão ao vivo, pensado para **começar com 1 modelo** e crescer d
 | `checkout.html?p=N` | Pagamento do pacote N: Pix (QR Code, copia e cola, contagem regressiva) ou cartão, e tela de aprovado/recusado. |
 | `entrar.html`, `cadastro.html`, `recuperar-senha.html` | Login, cadastro (checa 18+ pela data de nascimento) e recuperação de senha. |
 | `conta.html` | Minha conta: saldo, extrato de créditos, modelos seguidas e meus dados. |
-| `painel-modelo.html` | Área da modelo: ficar ao vivo, como transmitir pelo OBS, ganhos, perfil e configurações da sala. |
+| `modelo-entrar.html`, `painel-modelo.html` | Área da modelo, com login próprio: ficar ao vivo, como transmitir pelo OBS, ganhos, perfil, configurações da sala, trocar senha e sair. |
 | `termos.html`, `404.html` | Termos/privacidade (revisar com advogado) e página de erro. |
 
 Todas as páginas mostram o aviso de **18+** na primeira visita.
@@ -28,7 +28,7 @@ Para ver o visual sem servidor (por exemplo abrindo os arquivos direto ou num `n
 para testar o fluxo inteiro: criar conta → comprar créditos → "Simular pagamento aprovado" → gorjeta → privado →
 extrato. Nunca publique o site com `modoDemo: true`.
 
-> A `painel-modelo.html` ainda não tem senha. Antes de colocar o site no ar, ela precisa de login próprio da modelo.
+> A área da modelo tem login próprio (veja "Área da modelo" no fim). Ganhos, status e edição do perfil ainda são só visuais.
 
 ## Como trocar os dados da modelo
 
@@ -55,7 +55,7 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 2. **Excluir conta e trocar e-mail:** hoje são pedidos ao suporte (o botão abre um e-mail).
 3. **Chat em tempo real:** hoje as mensagens ficam só no navegador de quem escreve.
 4. **Status online automático:** hoje o campo `online` é manual.
-5. **Painel da modelo:** para ver ganhos, editar perfil e abrir ou fechar a sala.
+5. **Painel da modelo:** o login já existe; faltam ganhos reais, editar perfil e abrir ou fechar a sala pelo servidor.
 
 Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
 
@@ -153,3 +153,30 @@ php scripts/testar_pagamentos.php
 Os testes usam uma Unicopag simulada e um banco SQLite em memória: não precisam de chave, de MySQL nem de internet.
 Eles cobrem: preço vindo do servidor, webhook mentiroso, webhook repetido, valor divergente, Pix vencido, cartão
 aprovado e recusado, estorno, gastos sem saldo, isolamento entre usuários e os freios de login e de cobrança.
+
+## Área da modelo (login)
+
+A modelo entra em `/modelo-entrar.html` e cai em `/painel-modelo.html`. O login é **separado** do login de
+cliente: uma conta de quem assiste nunca abre o painel. Não existe cadastro de modelo pelo site.
+
+**Uma vez só, no phpMyAdmin:** depois de importar `api/schema.sql`, importe também `api/schema-modelos.sql`.
+
+**Criar a conta de uma modelo** (no seu computador, com PHP instalado):
+
+```bash
+php scripts/criar_conta_modelo.php livia-voguel livia@exemplo.com.br
+```
+
+O script pede a senha duas vezes, sem mostrar na tela, e imprime um `INSERT`. Cole esse SQL no phpMyAdmin
+(aba SQL). A senha nunca é guardada: só o hash vai para o banco. Rodar de novo para o mesmo slug troca o e-mail
+e a senha. O slug precisa existir em `api/lib/modelos.php`.
+
+- **Bloquear uma modelo** sem apagar nada: `UPDATE lv_modelos_contas SET ativa = 0 WHERE slug = 'livia-voguel';`
+  (a sessão aberta dela cai na hora).
+- **Esqueceu a senha:** rode o script de novo com uma senha nova e passe para ela.
+- O acesso vence sozinho em 12 horas. Depois de 5 senhas erradas em 15 minutos, o login espera.
+
+Endpoints: `api/modelo-entrar.php`, `api/modelo-eu.php`, `api/modelo-sair.php` e `api/modelo-senha.php`.
+Todo endpoint novo da área da modelo (ganhos, perfil, status) deve começar com `lv_exigir_modelo()`.
+
+Testes: `php scripts/testar_area_modelo.php` (sem MySQL nem internet).

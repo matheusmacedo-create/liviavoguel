@@ -4,20 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Área da modelo</title>
-  <meta name="robots" content="noindex">
+  <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="assets/img/logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
-  <main class="container conta">
+  <main class="container conta" id="painel" hidden>
     <nav class="lateral" id="lateral">
       <a href="#inicio">Painel</a>
       <a href="#transmitir">Transmitir</a>
       <a href="#ganhos">Ganhos</a>
       <a href="#perfil">Meu perfil</a>
       <a href="#sala">Configurar sala</a>
+      <a href="#seguranca">Senha e acesso</a>
     </nav>
     <section id="conteudo"></section>
   </main>
@@ -27,13 +28,16 @@
   <script src="assets/js/app.js"></script>
   <script>
     /*
-     * ÁREA DA MODELO (só visual por enquanto)
-     * Depois do backend: login próprio da modelo, status online automático,
-     * ganhos reais e edição do perfil salvando no banco em vez de modelos.js.
+     * ÁREA DA MODELO
+     * Só abre com o login da modelo (modelo-entrar.html → api/modelo-entrar.php), que é
+     * separado do login de cliente. Ganhos, status e edição do perfil ainda são visuais:
+     * quando ganharem endpoints, cada um confere a sessão da modelo no servidor (lv_exigir_modelo).
      */
     LV.montar("");
     const { esc, reais } = LV;
-    const m = window.MODELOS[0];
+    const S = window.SITE;
+    let conta = null; // { slug, nome, email } da modelo logada
+    let m = null;     // dados públicos dela, de modelos.js
     const conteudo = document.getElementById("conteudo");
     const online = () => LV.ler("lv_painel_online", m.online ? "1" : "0") === "1";
 
@@ -128,6 +132,22 @@
           <button class="btn btn-primario" data-salvar>Salvar perfil</button>
         </form>`,
 
+      seguranca: () => `
+        <form class="painel" id="form-senha" novalidate>
+          <h2>Trocar senha</h2>
+          <p style="color:var(--texto-2);margin-bottom:14px">Você está conectada como <strong>${esc(conta.email)}</strong>.</p>
+          <div class="linha">
+            <div class="campo"><label for="senha-atual">Senha atual</label><input id="senha-atual" type="password" autocomplete="current-password"></div>
+            <div class="campo"><label for="senha-nova">Nova senha</label><input id="senha-nova" type="password" autocomplete="new-password" minlength="8"><span class="ajuda">8 caracteres ou mais</span></div>
+          </div>
+          <button class="btn btn-primario">Trocar senha</button>
+        </form>
+        <div class="painel">
+          <h2>Sair</h2>
+          <p style="color:var(--texto-2);margin-bottom:14px">Por segurança, o acesso vence sozinho em 12 horas. Em computador de outra pessoa, saia sempre ao terminar.</p>
+          <button class="btn perigo" id="sair-modelo">Sair da área da modelo</button>
+        </div>`,
+
       sala: () => `
         <form class="painel" novalidate>
           <h2>Configurar sala</h2>
@@ -165,8 +185,43 @@
         LV.toast(e.target.checked ? "Você está ao vivo!" : "Sala fechada.");
       }
     });
-    window.addEventListener("hashchange", abrir);
-    abrir();
+    conteudo.addEventListener("submit", async (e) => {
+      if (e.target.id !== "form-senha") return;
+      e.preventDefault();
+      const atual = document.getElementById("senha-atual").value;
+      const nova = document.getElementById("senha-nova").value;
+      if (nova.length < 8) return LV.toast("A nova senha precisa de 8 caracteres ou mais.");
+      if (S.modoDemo) { e.target.reset(); return LV.toast("Senha trocada (demonstração)."); }
+      try {
+        await LV.api("modelo-senha.php", { senha_atual: atual, senha_nova: nova });
+        e.target.reset();
+        LV.toast("Senha trocada!");
+      } catch (err) {
+        if (err.status === 401) return location.replace("modelo-entrar.html");
+        LV.toast(err.message);
+      }
+    });
+    conteudo.addEventListener("click", async (e) => {
+      if (e.target.id !== "sair-modelo") return;
+      if (S.modoDemo) LV.gravar("lv_modelo_demo", "");
+      else await LV.api("modelo-sair.php", {}).catch(() => {});
+      location.replace("modelo-entrar.html");
+    });
+
+    // Confere o login da modelo antes de mostrar qualquer coisa.
+    async function verificar() {
+      if (S.modoDemo) {
+        try { conta = JSON.parse(LV.ler("lv_modelo_demo", "") || "null"); } catch { conta = null; }
+      } else {
+        try { conta = (await LV.api("modelo-eu.php")).modelo; } catch { conta = null; }
+      }
+      m = conta && window.MODELOS.find((x) => x.slug === conta.slug);
+      if (!m) return location.replace("modelo-entrar.html");
+      document.getElementById("painel").hidden = false;
+      window.addEventListener("hashchange", abrir);
+      abrir();
+    }
+    verificar();
   </script>
 </body>
 </html>
