@@ -1,4 +1,3 @@
-#!/usr/bin/env php
 <?php
 /**
  * Testes do login da área da modelo (api/modelo-*.php): sem rede, sem MySQL e sem segredos.
@@ -7,6 +6,12 @@
  * Sai com código 1 se algum teste falhar. O banco é um SQLite em memória com api/schema.sql + api/schema-modelos.sql.
  */
 declare(strict_types=1);
+
+// Só pela linha de comando: se o arquivo for aberto pelo navegador, não faz nada.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
 
 const LV_TESTE = true;
 $raiz = dirname(__DIR__);

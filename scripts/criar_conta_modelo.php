@@ -1,4 +1,3 @@
-#!/usr/bin/env php
 <?php
 /**
  * Cria (ou troca a senha de) uma conta da área da modelo. Não fala com o banco: imprime o SQL para colar
@@ -11,6 +10,12 @@
  * e-mail e a senha da conta existente, e reativa a conta se estiver bloqueada.
  */
 declare(strict_types=1);
+
+// Só pela linha de comando: se o arquivo for aberto pelo navegador, não faz nada.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
 
 require dirname(__DIR__) . '/api/lib/modelos.php';
 
