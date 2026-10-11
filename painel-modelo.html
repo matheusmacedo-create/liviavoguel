@@ -170,12 +170,14 @@
         </div>
         <div class="painel">
           <h2>Dados de transmissão</h2>
+          ${transmissao && transmissao.configurada ? `
           <div class="campo"><label>Servidor (RTMP)</label>
-            <div class="segredo"><input readonly value="rtmp://servidor-de-streaming/live" id="rtmp"><button class="btn btn-pequeno" data-copiar="rtmp">Copiar</button></div></div>
+            <div class="segredo"><input readonly value="${esc(transmissao.rtmp_servidor)}" id="rtmp"><button class="btn btn-pequeno" data-copiar="rtmp">Copiar</button></div></div>
           <div class="campo"><label>Chave de transmissão</label>
-            <div class="segredo"><input readonly type="password" value="chave-sera-gerada-pelo-servico" id="chave"><button class="btn btn-pequeno" id="mostrar">Mostrar</button><button class="btn btn-pequeno" data-copiar="chave">Copiar</button></div>
+            <div class="segredo"><input readonly type="password" value="${esc(transmissao.rtmp_chave)}" id="chave"><button class="btn btn-pequeno" id="mostrar">Mostrar</button><button class="btn btn-pequeno" data-copiar="chave">Copiar</button></div>
             <span class="ajuda">Nunca compartilhe a chave. Com ela, qualquer pessoa transmite na sua sala.</span></div>
-          <p style="color:var(--texto-2);font-size:.85rem">Esses dados são preenchidos quando o serviço de streaming for contratado.</p>
+          <p style="color:var(--texto-2);font-size:.85rem">Depois de iniciar no OBS, ligue o botão <strong>Ao vivo</strong> no Painel para a sua sala aparecer no site.</p>`
+          : `<div class="vazio"><div class="icone">📡</div>${S.modoDemo ? "No modo demonstração não há dados de transmissão." : "A equipe ainda não configurou a sua transmissão."}<br>Assim que configurar, o servidor e a chave aparecem aqui.</div>`}
         </div>
         <div class="painel">
           <h2>Configuração recomendada</h2>
@@ -269,6 +271,9 @@
           <button class="btn btn-primario" id="salvar-sala">Salvar</button>
         </form>`
     };
+
+    // Dados do OBS (api/modelo-transmitir.php): só a própria modelo vê a chave.
+    let transmissao = null;
 
     // ---------- Fotos (api/modelo-fotos.php) ----------
     // A primeira foto vira a capa (página inicial, avatar e player); as outras formam a galeria da sala.
@@ -529,6 +534,14 @@
       if (nome === "inicio" || nome === "ganhos") {
         conteudo.innerHTML = `<div class="vazio"><span class="girando" style="display:inline-block"></span><br>Carregando seus ganhos...</div>`;
         await Promise.all([carregarGanhos(), nome === "ganhos" ? carregarSaques() : null]);
+        if ((location.hash.slice(1) || "inicio") !== nome && location.hash.slice(1) in secoes) return; // trocou de aba enquanto carregava
+      }
+      if (nome === "transmitir") {
+        conteudo.innerHTML = `<div class="vazio"><span class="girando" style="display:inline-block"></span></div>`;
+        transmissao = null;
+        if (!S.modoDemo) {
+          try { transmissao = await LV.api("modelo-transmitir.php"); } catch (err) { if (err.status === 401) return location.replace("modelo-entrar.html"); }
+        }
         if ((location.hash.slice(1) || "inicio") !== nome && location.hash.slice(1) in secoes) return; // trocou de aba enquanto carregava
       }
       if (nome === "perfil") {

@@ -346,3 +346,6 @@ button { font: inherit; cursor: pointer; border: 0; }
 .foto-item .selo-capa { position: absolute; top: 8px; left: 8px; background: var(--grad); color: #fff; font-size: .72rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
 .foto-item figcaption { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
 .foto-item figcaption .btn { padding: 6px 10px; font-size: .78rem; }
+
+/* Vídeo ao vivo (assets/js/video.js): o aviso e a capa ficam por cima até o vídeo começar */
+.player video { width: 100%; height: 100%; display: block; background: #000; object-fit: contain; }

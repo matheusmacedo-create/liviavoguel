@@ -5,11 +5,13 @@
  * POST { acao: "saque_pago", id, observacao? }      → marca um saque pendente como pago (depois de fazer o Pix)
  * POST { acao: "saque_recusado", id, observacao }   → recusa (os créditos voltam ao disponível da modelo)
  * POST { acao: "modelo_bloquear" | "modelo_reativar", id } → bloqueia (sessão cai, sala desliga) ou reativa a conta
+ * POST { acao: "stream_salvar", id, hls_url, rtmp_servidor, rtmp_chave } → transmissão da modelo (tudo vazio = apagar)
  */
 declare(strict_types=1);
 require_once __DIR__ . '/lib/base.php';
 require_once __DIR__ . '/lib/modelo-conta.php';
 require_once __DIR__ . '/lib/saques.php';
+require_once __DIR__ . '/lib/stream.php';
 require_once __DIR__ . '/lib/equipe.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
@@ -23,6 +25,16 @@ $acao = $b['acao'] ?? '';
 $id = $b['id'] ?? null;
 if (!is_int($id)) {
     lv_falhar(422, 'Informe o id.');
+}
+if ($acao === 'stream_salvar') {
+    $modelo = lv_modelo_conta($id) ?? lv_falhar(404, 'Conta de modelo não encontrada.');
+    [$config, $erroCampo] = lv_stream_validar($b);
+    if ($erroCampo !== null) {
+        lv_falhar(422, $erroCampo[1], ['campo' => $erroCampo[0]]);
+    }
+    lv_stream_salvar((string) $modelo['slug'], $config);
+    lv_registrar('equipe_acao', 'q:' . $conta['id'], 'stream_salvar ' . $id);
+    lv_json(['ok' => true, 'saques' => lv_equipe_saques(), 'modelos' => lv_equipe_modelos()]);
 }
 $observacao = lv_texto(is_string($b['observacao'] ?? null) ? $b['observacao'] : '', 190);
 $erro = match ($acao) {

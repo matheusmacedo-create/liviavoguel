@@ -53,8 +53,8 @@ os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 
 ## O que ainda é demonstração (próximas etapas)
 
-1. **Transmissão ao vivo:** contratar um serviço de streaming que aceite conteúdo adulto e
-   colar o link do player no campo `streamUrl`. A modelo transmite pelo OBS (RTMP).
+1. **Transmissão ao vivo:** o site já toca o vídeo (veja "Transmissão ao vivo" no fim). Falta escolher onde o vídeo
+   roda (serviço de streaming que aceite conteúdo adulto, ou servidor próprio numa VPS) e colar os links no painel da equipe.
 2. **Excluir conta e trocar e-mail:** feitos pelo próprio site, em "Minha conta → Meus dados" (veja "Conta do cliente" no fim).
 3. **Chat em tempo real:** feito, com moderação pela modelo (veja "Chat das salas" no fim).
 4. **Status online automático:** hoje o campo `online` é manual.
@@ -285,7 +285,8 @@ separado do de cliente e do de modelo, com sessão de no máximo 8 horas e esper
 - **Saques para pagar:** valor, modelo e chave Pix (com botão de copiar). A equipe faz o Pix pelo banco e clica em
   **Marcar como pago** (pode anotar o ID do Pix); ou **Recusar**, com o motivo, que a modelo vê no painel dela. Os
   créditos de um saque recusado voltam ao disponível. Cada saque só sai de "pendente" uma vez.
-- **Modelos:** situação (ativa, ao vivo ou bloqueada), valor disponível e último login. **Bloquear** derruba a sessão
+- **Modelos:** situação (ativa, ao vivo ou bloqueada), valor disponível e último login. **Transmissão** guarda os
+  links do vídeo de cada modelo (veja "Transmissão ao vivo"). **Bloquear** derruba a sessão
   dela na hora, desliga a sala e impede o login, sem apagar nada; **Reativar** devolve o acesso.
 - Toda ação fica registrada em `lv_eventos` (tipo `equipe_acao`).
 
@@ -309,3 +310,24 @@ Em **Minha conta → Meus dados**:
   usados são perdidos (o aviso mostra quantos). Com um pagamento ainda pendente, a exclusão espera, para os créditos
   não caírem numa conta excluída. A sessão é encerrada.
 
+## Transmissão ao vivo
+
+O vídeo não passa pela Hostinger: a modelo manda do OBS (RTMP) para um servidor de vídeo, que entrega à sala em HLS
+(`.m3u8`). O site só guarda os links e toca o vídeo, então funciona com qualquer serviço ou servidor próprio.
+
+1. **Escolher onde o vídeo roda** (decisão de quem administra):
+   - **Serviço de streaming** que aceite conteúdo adulto e entregue HLS. Paga por minuto assistido; sem servidor para cuidar.
+   - **Servidor próprio** numa VPS (por exemplo MediaMTX ou nginx-rtmp, com HTTPS na frente). Custo fixo, mas é preciso
+     manter. A hospedagem compartilhada da Hostinger não serve para isso.
+2. **Painel da equipe → Modelos → Configurar transmissão:** colar o **link do player** (`https://…/index.m3u8`), o
+   **servidor do OBS** (`rtmp://` ou `rtmps://`) e a **chave de transmissão**. Os três vazios desligam.
+3. A modelo vê o servidor e a chave em **Painel da modelo → Transmitir**, cola no OBS, inicia a transmissão e liga
+   o **Ao vivo**.
+4. A sala (`sala.html`) toca o vídeo para quem está logado, só enquanto a modelo está ao vivo; liga e desliga sozinha
+   quando ela muda o status. No Safari o HLS é nativo; nos outros navegadores usa o `assets/js/vendor/hls.light.min.js`
+   (hls.js 1.5.20, licença Apache-2.0 em `LICENSE-hls.js.txt`). Se o vídeo cair, tenta de novo a cada 8 segundos.
+
+A chave é segredo: só a própria modelo (`api/modelo-transmitir.php`) e a equipe a veem. Quem assiste recebe apenas o link
+do player (`api/stream.php`). Tabela `lv_modelos_stream` em `api/schema-modelos.sql` (criada sozinha no próximo acesso).
+
+No modo demonstração a sala continua usando o `streamUrl` de `assets/js/modelos.js`.

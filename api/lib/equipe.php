@@ -1,7 +1,7 @@
 <?php
 /**
  * Painel da equipe: login próprio (sessão `equipe_id`, separada de cliente e de modelo), saques e contas de modelo.
- * Incluir depois de base.php, modelo-conta.php e saques.php.
+ * Incluir depois de base.php, modelo-conta.php, saques.php e stream.php.
  */
 declare(strict_types=1);
 
@@ -102,6 +102,7 @@ function lv_equipe_modelos(): array
         'online' => (bool) ($aoVivo[$c['slug']]['online'] ?? false),
         'ultimo_login' => $c['ultimo_login_em'] ? gmdate('Y-m-d\TH:i:s\Z', (int) strtotime($c['ultimo_login_em'] . ' UTC')) : null,
         'disponivel' => lv_saque_disponivel((string) $c['slug']),
+        'stream' => lv_stream_config((string) $c['slug']),
     ], $contas);
 }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/base.php';
 require_once __DIR__ . '/lib/modelo-conta.php';
 require_once __DIR__ . '/lib/saques.php';
+require_once __DIR__ . '/lib/stream.php';
 require_once __DIR__ . '/lib/equipe.php';
 
 $b = lv_ler_json();
