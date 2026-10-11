@@ -206,6 +206,88 @@ for ($i = 0; $i < 5; $i++) {
 [$s] = chamar('modelo-senha.php', 'POST', ['senha_atual' => 'nova-senha-789', 'senha_nova' => 'outra-senha-000']);
 verificar('5 chutes da senha atual: espera', $s, 429);
 
+// ============================================================================= ganhos
+// Meia-noite de Brasília: 02:00 UTC do dia 11 ainda é dia 10 lá (23:00), e o dia 10 começou às 03:00 UTC.
+$t = (int) strtotime('2026-10-11 02:00:00 UTC');
+verificar('hoje no fuso de Brasília', lv_modelo_inicio('today', $t), '2026-10-10 03:00:00');
+verificar('início do mês no fuso de Brasília', lv_modelo_inicio('first day of this month midnight', $t), '2026-10-01 03:00:00');
+verificar('início do mês passado', lv_modelo_inicio('first day of last month midnight', $t), '2026-09-01 03:00:00');
+
+recomecar();
+$idModelo = criar_conta('livia-voguel', 'livia@exemplo.com.br', $senhaBoa);
+$pdo = lv_db();
+$pdo->exec("INSERT INTO lv_usuarios (email, apelido, senha_hash, criado_em) VALUES ('fa@exemplo.com.br', 'fa_carioca', 'x', '2026-01-01 00:00:00')");
+$fa = (int) $pdo->lastInsertId();
+$lancar = static function (int $creditos, string $motivo, ?string $modelo, string $quando) use ($pdo, $fa): void {
+    $pdo->prepare('INSERT INTO lv_extrato (usuario_id, creditos, motivo, modelo, descricao, criado_em) VALUES (?, ?, ?, ?, ?, ?)')
+        ->execute([$fa, $creditos, $motivo, $modelo, $motivo, $quando]);
+};
+$hoje = lv_modelo_inicio('today');
+$seteDias = lv_modelo_inicio('today -6 days');
+$mes = lv_modelo_inicio('first day of this month midnight');
+$mesPassado = lv_modelo_inicio('first day of last month midnight');
+$menos1s = static fn(string $t): string => gmdate('Y-m-d H:i:s', (int) strtotime($t . ' UTC') - 1);
+$recebidos = [ // [créditos recebidos, motivo, quando]
+    [10, 'gorjeta', $hoje],                 // hoje (bem na meia-noite)
+    [20, 'privado', $hoje],                 // hoje, 1 minuto de privado
+    [5, 'gorjeta', $menos1s($hoje)],        // ontem
+    [7, 'gorjeta', $menos1s($seteDias)],    // fora dos últimos 7 dias
+    [30, 'gorjeta', $menos1s($mes)],        // mês passado
+    [100, 'gorjeta', $menos1s($mesPassado)], // antes do mês passado
+];
+foreach ($recebidos as [$c, $motivo, $quando]) {
+    $lancar(-$c, $motivo, 'livia-voguel', $quando);
+}
+$lancar(130, 'compra', null, $hoje);               // compra do cliente: não é ganho
+$lancar(-50, 'gorjeta', 'outra-modelo', $hoje);    // gorjeta para outra modelo: não é dela
+$somar = static fn(callable $filtro): int => array_sum(array_map(static fn($r) => $r[0], array_filter($recebidos, $filtro)));
+$repasse = LV_MODELO_REPASSE_PADRAO;
+
+$_SESSION = [];
+$_SESSION['usuario_id'] = $fa;
+[$s, $c] = chamar('modelo-ganhos.php');
+verificar('ganhos sem login de modelo (cliente logado): 401', [$s, $c['login_modelo'] ?? null], [401, true]);
+
+$entrar('livia@exemplo.com.br', $senhaBoa);
+$_GET = [];
+[$s, $g] = chamar('modelo-ganhos.php');
+verificar('ganhos: 200', $s, 200);
+verificar('ganhos: repasse padrão', $g['repasse_centavos'], $repasse);
+verificar('ganhos hoje', $g['resumo']['hoje'], ['creditos' => 30, 'centavos' => 30 * $repasse, 'quantidade' => 2]);
+$mesEsperado = $somar(static fn($r) => $r[2] >= $mes);
+verificar('ganhos no mês', $g['resumo']['mes']['creditos'], $mesEsperado);
+verificar('ganhos desde o início', $g['resumo']['total']['creditos'], 172);
+verificar('privado no mês (minutos = quantidade)', [$g['resumo']['privado_mes']['creditos'], $g['resumo']['privado_mes']['quantidade']], [20, 1]);
+verificar('período padrão = 7 dias', $g['periodo']['nome'], '7d');
+// Conta pelos dados, não por número fixo: do dia 1 ao 6 do mês, a gorjeta "do mês passado" cai nos últimos 7 dias.
+verificar('7 dias: soma', $g['periodo']['soma']['creditos'], $somar(static fn($r) => $r[2] >= $seteDias));
+verificar('7 dias: lançamentos', count($g['periodo']['lancamentos']), count(array_filter($recebidos, static fn($r) => $r[2] >= $seteDias)));
+verificar('lançamento mostra o apelido', $g['periodo']['lancamentos'][0]['cliente'], 'fa_carioca');
+verificar('lançamento nunca mostra o e-mail', str_contains(json_encode($g), 'fa@exemplo'), false);
+verificar('lançamento: créditos positivos e em centavos', [$g['ultimas'][0]['creditos'] > 0, $g['ultimas'][0]['centavos'] === $g['ultimas'][0]['creditos'] * $repasse], [true, true]);
+verificar('últimas: no máximo 5', count($g['ultimas']), 5);
+
+$_GET = ['periodo' => 'mes_passado'];
+[, $g] = chamar('modelo-ganhos.php');
+verificar('mês passado: soma', $g['periodo']['soma']['creditos'], $somar(static fn($r) => $r[2] >= $mesPassado && $r[2] < $mes));
+verificar('mês passado: tem fim', $g['periodo']['ate'] !== null, true);
+
+$_GET = ['periodo' => 'qualquer-coisa'];
+[, $g] = chamar('modelo-ganhos.php');
+verificar('período inválido vira 7 dias', $g['periodo']['nome'], '7d');
+$_GET = ['periodo' => ['7d']];
+[$s] = chamar('modelo-ganhos.php');
+verificar('período em lista não quebra', $s, 200);
+$_GET = [];
+
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br', 'MODELO_REPASSE_CENTAVOS' => 35];");
+[, $g] = chamar('modelo-ganhos.php');
+verificar('repasse configurável no config.php', [$g['repasse_centavos'], $g['resumo']['hoje']['centavos']], [35, 30 * 35]);
+file_put_contents($configTeste, "<?php return ['SITE_URL' => 'https://exemplo.com.br'];");
+
+[$s] = chamar('modelo-ganhos.php', 'POST', []);
+verificar('ganhos por POST: 405', $s, 405);
+
 // ============================================================================= espelho dos slugs
 // Sem comentários: o exemplo "nova-modelo" comentado no fim do arquivo não é uma modelo.
 $js = preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', (string) file_get_contents($raiz . '/assets/js/modelos.js'));

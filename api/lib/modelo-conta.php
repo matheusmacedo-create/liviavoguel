@@ -82,3 +82,70 @@ function lv_modelo_deslogar(): void
         session_regenerate_id(true);
     }
 }
+
+// ----------------------------------------------------------------------------- ganhos
+
+/** Repasse padrão da modelo por crédito recebido, em centavos. No servidor, MODELO_REPASSE_CENTAVOS no config.php muda. */
+const LV_MODELO_REPASSE_PADRAO = 20;
+
+/** Os ganhos são contados no fuso de Brasília ("hoje" e "este mês" viram à meia-noite daqui, não do UTC). */
+const LV_MODELO_FUSO = 'America/Sao_Paulo';
+
+function lv_modelo_repasse_centavos(): int
+{
+    return max(0, (int) lv_cfg('MODELO_REPASSE_CENTAVOS', LV_MODELO_REPASSE_PADRAO));
+}
+
+/** Início de um dia/mês no fuso de Brasília, como texto UTC no formato do banco. */
+function lv_modelo_inicio(string $quando, ?int $agora = null): string
+{
+    $fuso = new DateTimeZone(LV_MODELO_FUSO);
+    $data = (new DateTimeImmutable('@' . ($agora ?? time())))->setTimezone($fuso)->modify($quando);
+    return $data->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+}
+
+/** Créditos que a modelo recebeu (gorjetas e minutos de privado) entre $de (incluso) e $ate (excluso), em UTC. */
+function lv_modelo_soma(string $slug, ?string $de = null, ?string $ate = null, ?string $motivo = null): array
+{
+    $sql = "SELECT COALESCE(SUM(-creditos), 0) AS creditos, COUNT(*) AS quantidade FROM lv_extrato
+            WHERE modelo = ? AND motivo IN ('gorjeta', 'privado')";
+    $params = [$slug];
+    foreach ([['criado_em >= ?', $de], ['criado_em < ?', $ate], ['motivo = ?', $motivo]] as [$condicao, $valor]) {
+        if ($valor !== null) {
+            $sql .= ' AND ' . $condicao;
+            $params[] = $valor;
+        }
+    }
+    $stmt = lv_db()->prepare($sql);
+    $stmt->execute($params);
+    $linha = $stmt->fetch();
+    $creditos = (int) $linha['creditos'];
+    return ['creditos' => $creditos, 'centavos' => $creditos * lv_modelo_repasse_centavos(), 'quantidade' => (int) $linha['quantidade']];
+}
+
+/** Lançamentos recebidos pela modelo, do mais novo ao mais antigo. Mostra só o apelido público de quem mandou. */
+function lv_modelo_lancamentos(string $slug, ?string $de = null, ?string $ate = null, int $limite = 200): array
+{
+    $sql = "SELECT e.creditos, e.motivo, e.criado_em, u.apelido FROM lv_extrato e JOIN lv_usuarios u ON u.id = e.usuario_id
+            WHERE e.modelo = ? AND e.motivo IN ('gorjeta', 'privado')";
+    $params = [$slug];
+    if ($de !== null) {
+        $sql .= ' AND e.criado_em >= ?';
+        $params[] = $de;
+    }
+    if ($ate !== null) {
+        $sql .= ' AND e.criado_em < ?';
+        $params[] = $ate;
+    }
+    $stmt = lv_db()->prepare($sql . ' ORDER BY e.id DESC LIMIT ' . max(1, min(500, $limite)));
+    $stmt->execute($params);
+    $repasse = lv_modelo_repasse_centavos();
+    return array_map(static fn(array $l): array => [
+        'data' => gmdate('Y-m-d\TH:i:s\Z', (int) strtotime($l['criado_em'] . ' UTC')),
+        'tipo' => (string) $l['motivo'],
+        'cliente' => (string) $l['apelido'],
+        'creditos' => -(int) $l['creditos'],
+        'centavos' => -(int) $l['creditos'] * $repasse,
+    ], $stmt->fetchAll());
+}
+

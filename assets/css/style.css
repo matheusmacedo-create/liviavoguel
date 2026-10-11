@@ -335,3 +335,5 @@ button { font: inherit; cursor: pointer; border: 0; }
 .erro-404 strong { display: block; font-size: 5rem; line-height: 1; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .campo.erro .ajuda { display: none; }
 [hidden] { display: none !important; }
+/* Tabelas do painel: no celular some a coluna de apoio, para o valor caber sem arrastar */
+@media (max-width: 560px) { .col-opcional { display: none; } .tabela th, .tabela td { padding: 10px 6px; } }
