@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pagamento</title>
+  <meta name="rating" content="adult">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="container checkout">
+    <section class="painel" id="etapa"></section>
+
+    <aside class="painel resumo" id="resumo"></aside>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    /*
+     * CHECKOUT
+     * Contrato com o backend (pasta api/, integração Unicopag):
+     *   POST api/cobranca.php  { pacote, metodo: "pix"|"cartao", nome, cpf, email, cartao? }
+     *        → { id, status, pix?: { qrcode_base64, qrcode_url, copia_cola, expira_em } }
+     *        → 401 { login: true } quando a sessão expirou
+     *   GET  api/status.php?id=…  → { status: "pendente"|"pago"|"falhou"|"expirado"|"estornado", creditos }
+     * Com SITE.modoDemo = true, tudo é simulado aqui mesmo.
+     */
+    LV.montar("creditos");
+    const { esc, reais } = LV;
+    const S = window.SITE;
+    const i = Number(new URLSearchParams(location.search).get("p"));
+    const pacote = S.pacotes[i];
+    const $ = (id) => document.getElementById(id);
+    const etapa = $("etapa");
+
+    function resumo() {
+      $("resumo").innerHTML = `
+        <h2>Resumo</h2>
+        <div class="linha-resumo"><span>Pacote</span><span>${pacote.creditos} créditos</span></div>
+        <div class="linha-resumo"><span>Bônus</span><span style="color:var(--verde)">${pacote.bonus ? "+" + pacote.bonus : "—"}</span></div>
+        <div class="linha-resumo"><span>Você recebe</span><strong style="color:var(--texto)">● ${pacote.creditos + pacote.bonus}</strong></div>
+        <div class="linha-resumo total"><span>Total</span><span>${reais(pacote.preco)}</span></div>
+        <a class="link trocar" href="creditos.html">Trocar pacote</a>
+        <div class="selos-seguranca"><span>🔒 Pagamento seguro</span><span>🕶 Cobrança discreta</span></div>`;
+    }
+
+    function cpfValido(c) {
+      c = c.replace(/\D/g, "");
+      if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+      for (const t of [9, 10]) {
+        let s = 0;
+        for (let k = 0; k < t; k++) s += Number(c[k]) * (t + 1 - k);
+        if (((s * 10) % 11) % 10 !== Number(c[t])) return false;
+      }
+      return true;
+    }
+    const mascara = {
+      cpf: (v) => v.replace(/\D/g, "").slice(0, 11).replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2"),
+      cartao: (v) => v.replace(/\D/g, "").slice(0, 16).replace(/(\d{4})(?=\d)/g, "$1 "),
+      validade: (v) => v.replace(/\D/g, "").slice(0, 4).replace(/(\d{2})(\d)/, "$1/$2"),
+      cvv: (v) => v.replace(/\D/g, "").slice(0, 4)
+    };
+
+    let metodo = "pix";
+    function iniciar() {
+      resumo();
+      const u = LV.usuario();
+      etapa.innerHTML = `
+        <div class="passos-checkout"><span class="feito">1. Pacote</span><span class="feito">2. Pagamento</span><span>3. Confirmação</span></div>
+        <h2>Como você quer pagar?</h2>
+        <div class="metodos">
+          <button class="metodo ativo" data-metodo="pix"><strong>⚡ Pix</strong><small>Aprovação na hora</small></button>
+          <button class="metodo" data-metodo="cartao"><strong>💳 Cartão</strong><small>Crédito</small></button>
+        </div>
+        <form id="form" novalidate>
+          <div class="campo"><label for="nome">Nome completo</label><input id="nome" autocomplete="name" required></div>
+          <div class="linha">
+            <div class="campo"><label for="cpf">CPF</label><input id="cpf" inputmode="numeric" placeholder="000.000.000-00" required></div>
+            <div class="campo"><label for="email">E-mail</label><input id="email" type="email" value="${esc(u.email)}" required></div>
+          </div>
+          <div id="campos-cartao" class="oculto">
+            <div class="campo"><label for="numero">Número do cartão</label><input id="numero" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000"></div>
+            <div class="campo"><label for="titular">Nome impresso no cartão</label><input id="titular" autocomplete="cc-name"></div>
+            <div class="linha">
+              <div class="campo"><label for="validade">Validade</label><input id="validade" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA"></div>
+              <div class="campo"><label for="cvv">CVV</label><input id="cvv" inputmode="numeric" autocomplete="cc-csc" placeholder="123"></div>
+            </div>
+          </div>
+          <span class="ajuda" style="display:block;color:var(--texto-2);font-size:.8rem;margin-bottom:14px">Na fatura aparece um nome comercial discreto.</span>
+          <button class="btn btn-primario btn-bloco" id="pagar">Gerar Pix de ${reais(pacote.preco)}</button>
+        </form>`;
+
+      etapa.querySelectorAll("[data-metodo]").forEach((b) => b.addEventListener("click", () => {
+        metodo = b.dataset.metodo;
+        etapa.querySelectorAll("[data-metodo]").forEach((x) => x.classList.toggle("ativo", x === b));
+        $("campos-cartao").classList.toggle("oculto", metodo !== "cartao");
+        $("pagar").textContent = metodo === "pix" ? `Gerar Pix de ${reais(pacote.preco)}` : `Pagar ${reais(pacote.preco)}`;
+      }));
+      for (const [id, fn] of [["cpf", mascara.cpf], ["numero", mascara.cartao], ["validade", mascara.validade], ["cvv", mascara.cvv]]) {
+        $(id).addEventListener("input", (e) => (e.target.value = fn(e.target.value)));
+      }
+      $("form").addEventListener("submit", enviar);
+    }
+
+    function erro(id, msg) {
+      const campo = $(id).closest(".campo");
+      campo.classList.toggle("erro", !!msg);
+      campo.querySelector(".msg-erro")?.remove();
+      if (msg) campo.insertAdjacentHTML("beforeend", `<span class="msg-erro">${msg}</span>`);
+      return !msg;
+    }
+
+    async function enviar(e) {
+      e.preventDefault();
+      const v = (id) => $(id).value.trim();
+      let ok = [
+        erro("nome", v("nome").split(" ").filter(Boolean).length >= 2 ? "" : "Informe nome e sobrenome"),
+        erro("cpf", cpfValido(v("cpf")) ? "" : "CPF inválido"),
+        erro("email", /^\S+@\S+\.\S+$/.test(v("email")) ? "" : "E-mail inválido")
+      ].every(Boolean);
+      if (metodo === "cartao") {
+        const [mm, aa] = v("validade").split("/").map(Number);
+        const venc = new Date(2000 + aa, mm); // primeiro dia do mês seguinte
+        ok = [
+          ok,
+          erro("numero", v("numero").replace(/\D/g, "").length >= 13 ? "" : "Número do cartão incompleto"),
+          erro("titular", v("titular").length >= 3 ? "" : "Informe o nome do cartão"),
+          erro("validade", mm >= 1 && mm <= 12 && venc > new Date() ? "" : "Validade inválida"),
+          erro("cvv", v("cvv").length >= 3 ? "" : "CVV inválido")
+        ].every(Boolean);
+      }
+      if (!ok) return;
+
+      const botao = $("pagar");
+      botao.disabled = true;
+      botao.innerHTML = `<span class="girando"></span> Processando...`;
+
+      const pedido = { pacote: i, metodo, nome: v("nome"), cpf: v("cpf").replace(/\D/g, ""), email: v("email") };
+      if (metodo === "cartao") pedido.cartao = { numero: v("numero").replace(/\D/g, ""), titular: v("titular"), validade: v("validade"), cvv: v("cvv") };
+
+      try {
+        const r = await criarCobranca(pedido);
+        if (r.status === "pago") return aprovado();
+        if (r.status === "falhou") throw new Error(r.mensagem || "Pagamento recusado. Confira os dados ou use outro cartão.");
+        if (metodo === "pix") return mostrarPix(r);
+        acompanhar(r.id);
+      } catch (err) {
+        botao.disabled = false;
+        botao.textContent = metodo === "pix" ? `Gerar Pix de ${reais(pacote.preco)}` : `Pagar ${reais(pacote.preco)}`;
+        LV.toast(err.message || "Não foi possível processar. Tente de novo.");
+      }
+    }
+
+    // ---------- Comunicação com o backend (ou simulação) ----------
+    async function criarCobranca(pedido) {
+      if (S.modoDemo) {
+        await new Promise((r) => setTimeout(r, 900));
+        return pedido.metodo === "cartao"
+          ? { id: "demo", status: "pago" }
+          : { id: "demo", status: "pendente", pix: { qrcode_base64: "", copia_cola: "00020126580014BR.GOV.BCB.PIX0136demo-demo-demo-demo-demo5204000053039865802BR5913LIVIA VOGUEL6009SAO PAULO62070503***6304ABCD", expira_em: new Date(Date.now() + 15 * 60000).toISOString() } };
+      }
+      const res = await fetch("api/cobranca.php", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(pedido) });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 401 && json.login) {
+        LV.sair();
+        location.href = "entrar.html?volta=" + encodeURIComponent("checkout.html?p=" + i);
+        return new Promise(() => {}); // a página vai trocar
+      }
+      if (!res.ok) throw new Error(json.erro || "Não foi possível gerar a cobrança.");
+      return json;
+    }
+    async function consultar(id) {
+      const res = await fetch("api/status.php?id=" + encodeURIComponent(id), { credentials: "same-origin" });
+      return res.json();
+    }
+
+    let timer;
+    function acompanhar(id) {
+      if (S.modoDemo) return;
+      clearInterval(timer);
+      timer = setInterval(async () => {
+        try {
+          const r = await consultar(id);
+          if (r.status === "pago") { clearInterval(timer); aprovado(); }
+          if (["falhou", "expirado", "estornado"].includes(r.status)) { clearInterval(timer); falhou(r.status); }
+        } catch {}
+      }, 4000);
+    }
+
+    // QR genérico para o modo demonstração (não é um QR válido)
+    function qrDemo() {
+      let s = "", seed = 7;
+      const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+      for (let y = 0; y < 25; y++) for (let x = 0; x < 25; x++) {
+        const canto = (x < 7 && y < 7) || (x > 17 && y < 7) || (x < 7 && y > 17);
+        if (canto) {
+          const cx = x > 17 ? x - 18 : x, cy = y > 17 ? y - 18 : y;
+          if (cx === 0 || cx === 6 || cy === 0 || cy === 6 || (cx > 1 && cx < 5 && cy > 1 && cy < 5)) s += `<rect x="${x}" y="${y}" width="1" height="1"/>`;
+        } else if (rnd() > .5) s += `<rect x="${x}" y="${y}" width="1" height="1"/>`;
+      }
+      return `<svg viewBox="0 0 25 25" shape-rendering="crispEdges">${s}</svg>`;
+    }
+
+    // QR do Pix, nesta ordem: imagem em base64, link da imagem, QR gerado do copia e cola.
+    // O QR de demonstração (falso) só aparece com modoDemo ligado.
+    function qrPix(pix) {
+      if (pix.qrcode_base64) return `<img alt="QR Code Pix" src="data:image/png;base64,${esc(pix.qrcode_base64)}">`;
+      if (/^https:\/\//.test(pix.qrcode_url || "")) return `<img alt="QR Code Pix" src="${esc(pix.qrcode_url)}">`;
+      if (S.modoDemo) return qrDemo();
+      return ""; // gerado em seguida por gerarQr()
+    }
+    function gerarQr(texto) {
+      const caixa = $("pix-qr");
+      const desenhar = () => {
+        const qr = window.qrcode(0, "M");
+        qr.addData(texto);
+        qr.make();
+        caixa.innerHTML = qr.createSvgTag({ margin: 0, scalable: true });
+      };
+      // Sem QR, o cliente ainda paga pelo copia e cola
+      const semQr = () => { caixa.remove(); };
+      if (window.qrcode) return desenhar();
+      const sc = document.createElement("script");
+      sc.src = "assets/js/vendor/qrcode.js"; // qrcode-generator 1.4.4 (MIT)
+      sc.onload = () => { try { desenhar(); } catch { semQr(); } };
+      sc.onerror = semQr;
+      document.head.appendChild(sc);
+    }
+
+    function mostrarPix(r) {
+      const expira = new Date(r.pix.expira_em);
+      etapa.innerHTML = `
+        <div class="passos-checkout"><span class="feito">1. Pacote</span><span class="feito">2. Pagamento</span><span>3. Confirmação</span></div>
+        <div class="pix-box">
+          <h2>Pague com Pix</h2>
+          <p style="color:var(--texto-2);margin-bottom:16px">Abra o app do seu banco e escaneie o QR Code ou use o Pix copia e cola.</p>
+          <div class="pix-qr" id="pix-qr">${qrPix(r.pix)}</div>
+          <strong style="font-size:1.4rem">${reais(pacote.preco)}</strong>
+          <div class="copia-cola">
+            <input id="copia" readonly value="${esc(r.pix.copia_cola)}" aria-label="Pix copia e cola">
+            <button class="btn btn-pequeno btn-primario" id="copiar">Copiar</button>
+          </div>
+          <div class="aguardando"><span class="girando"></span> Aguardando pagamento · expira em <span class="cronometro" id="cron">--:--</span></div>
+          <ol class="instrucoes">
+            <li>Abra o app do banco e escolha <strong>Pix</strong>.</li>
+            <li>Escaneie o QR Code ou cole o código.</li>
+            <li>Confirme o pagamento. Os créditos entram na hora.</li>
+          </ol>
+          ${S.modoDemo ? `<button class="botao-demo" id="simular">Simular pagamento aprovado (demonstração)</button>` : ""}
+        </div>`;
+      $("copiar").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(r.pix.copia_cola); } catch { $("copia").select(); document.execCommand("copy"); }
+        LV.toast("Código Pix copiado!");
+      });
+      $("simular")?.addEventListener("click", aprovado);
+      if (!$("pix-qr").innerHTML) gerarQr(r.pix.copia_cola);
+      const tick = () => {
+        const s = Math.max(0, Math.round((expira - Date.now()) / 1000));
+        const cron = $("cron"); if (!cron) return clearInterval(relogio);
+        cron.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+        if (!s) { clearInterval(relogio); falhou("expirado"); }
+      };
+      const relogio = setInterval(tick, 1000); tick();
+      acompanhar(r.id);
+    }
+
+    function aprovado() {
+      clearInterval(timer);
+      const total = pacote.creditos + pacote.bonus;
+      if (S.modoDemo) LV.lancar(total, `Compra de pacote · ${reais(pacote.preco)}`);
+      const sala = window.MODELOS.find((m) => m.online) || window.MODELOS[0];
+      etapa.innerHTML = `
+        <div class="passos-checkout"><span class="feito">1. Pacote</span><span class="feito">2. Pagamento</span><span class="feito">3. Confirmação</span></div>
+        <div class="sucesso">
+          <div class="ok">✓</div>
+          <h2>Pagamento aprovado!</h2>
+          <p style="color:var(--texto-2);margin:8px 0 22px"><strong style="color:var(--texto)">● ${total} créditos</strong> foram adicionados à sua conta.</p>
+          <div style="display:grid;gap:10px;max-width:320px;margin:0 auto">
+            <a class="btn btn-primario" href="sala.html?m=${encodeURIComponent(sala.slug)}">Ir para a sala de ${esc(sala.nome)}</a>
+            <a class="btn" href="conta.html#extrato">Ver extrato</a>
+          </div>
+        </div>`;
+    }
+
+    function falhou(status) {
+      etapa.innerHTML = `
+        <div class="sucesso">
+          <div class="ok" style="background:rgba(255,84,112,.15);color:#ff7a90">!</div>
+          <h2>${{ expirado: "O Pix expirou", estornado: "Pagamento estornado" }[status] || "Pagamento não aprovado"}</h2>
+          <p style="color:var(--texto-2);margin:8px 0 22px">${{
+            expirado: "Gere um novo código para continuar.",
+            estornado: "O valor foi devolvido e os créditos não foram adicionados. Em caso de dúvida, fale com o suporte."
+          }[status] || "Nenhum valor foi cobrado. Tente de novo ou use outro método."}</p>
+          <button class="btn btn-primario" onclick="location.reload()">Tentar de novo</button>
+        </div>`;
+    }
+
+    if (!pacote) location.replace("creditos.html");
+    else if (LV.exigirLogin("Entre ou crie sua conta para comprar créditos.")) iniciar();
+    else etapa.innerHTML = `<div class="vazio"><div class="icone">🔐</div>Entre na sua conta para continuar a compra.</div>`;
+  </script>
+</body>
+</html>

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Área da modelo</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="container conta">
+    <nav class="lateral" id="lateral">
+      <a href="#inicio">Painel</a>
+      <a href="#transmitir">Transmitir</a>
+      <a href="#ganhos">Ganhos</a>
+      <a href="#perfil">Meu perfil</a>
+      <a href="#sala">Configurar sala</a>
+    </nav>
+    <section id="conteudo"></section>
+  </main>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/modelos.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    /*
+     * ÁREA DA MODELO (só visual por enquanto)
+     * Depois do backend: login próprio da modelo, status online automático,
+     * ganhos reais e edição do perfil salvando no banco em vez de modelos.js.
+     */
+    LV.montar("");
+    const { esc, reais } = LV;
+    const m = window.MODELOS[0];
+    const conteudo = document.getElementById("conteudo");
+    const online = () => LV.ler("lv_painel_online", m.online ? "1" : "0") === "1";
+
+    // Repasse da modelo sobre cada crédito (ajuste conforme o contrato)
+    const VALOR_CREDITO_MODELO = 0.2;
+
+    const secoes = {
+      inicio: () => `
+        <div class="painel-topo">
+          <h1>Olá, ${esc(m.nome.split(" ")[0])} 👋</h1>
+          <label class="chave"><input type="checkbox" id="status" ${online() ? "checked" : ""}><span class="trilho"></span><span id="status-txt">${online() ? "Ao vivo" : "Offline"}</span></label>
+        </div>
+        <div class="cards-numeros">
+          <div class="numero destaque"><small>Ganhos hoje</small><strong>${reais(0)}</strong></div>
+          <div class="numero"><small>Ganhos no mês</small><strong>${reais(0)}</strong></div>
+          <div class="numero"><small>Seguidores</small><strong>0</strong></div>
+          <div class="numero"><small>Minutos de privado (mês)</small><strong>0</strong></div>
+        </div>
+        <div class="painel">
+          <div class="painel-topo"><h2>Últimas gorjetas</h2><a class="link" href="#ganhos">Ver tudo</a></div>
+          <div class="vazio"><div class="icone">💸</div>As gorjetas aparecem aqui em tempo real quando você estiver ao vivo.</div>
+        </div>
+        <div class="painel">
+          <h2>Próximas transmissões</h2>
+          <ul class="lista-agenda">${m.agenda.map((a) => `<li><span>${esc(a.dia)}</span><strong>${esc(a.hora)}</strong></li>`).join("")}</ul>
+        </div>`,
+
+      transmitir: () => `
+        <div class="painel">
+          <h2>Como transmitir pelo OBS</h2>
+          <ol class="instrucoes" style="margin-top:0">
+            <li>Instale o <strong>OBS Studio</strong> (grátis) no computador.</li>
+            <li>No OBS, vá em <strong>Configurações → Transmissão</strong> e escolha <strong>Personalizado</strong>.</li>
+            <li>Cole o <strong>Servidor</strong> e a <strong>Chave de transmissão</strong> abaixo.</li>
+            <li>Clique em <strong>Iniciar transmissão</strong>. Em alguns segundos você aparece como ao vivo.</li>
+          </ol>
+        </div>
+        <div class="painel">
+          <h2>Dados de transmissão</h2>
+          <div class="campo"><label>Servidor (RTMP)</label>
+            <div class="segredo"><input readonly value="rtmp://servidor-de-streaming/live" id="rtmp"><button class="btn btn-pequeno" data-copiar="rtmp">Copiar</button></div></div>
+          <div class="campo"><label>Chave de transmissão</label>
+            <div class="segredo"><input readonly type="password" value="chave-sera-gerada-pelo-servico" id="chave"><button class="btn btn-pequeno" id="mostrar">Mostrar</button><button class="btn btn-pequeno" data-copiar="chave">Copiar</button></div>
+            <span class="ajuda">Nunca compartilhe a chave. Com ela, qualquer pessoa transmite na sua sala.</span></div>
+          <p style="color:var(--texto-2);font-size:.85rem">Esses dados são preenchidos quando o serviço de streaming for contratado.</p>
+        </div>
+        <div class="painel">
+          <h2>Configuração recomendada</h2>
+          <div class="privado-info" style="margin:0">
+            <div><span>Resolução</span><strong>1280×720 (720p)</strong></div>
+            <div><span>Taxa de quadros</span><strong>30 fps</strong></div>
+            <div><span>Bitrate de vídeo</span><strong>2500 a 3500 kbps</strong></div>
+            <div><span>Internet de upload mínima</span><strong>5 Mbps</strong></div>
+          </div>
+        </div>`,
+
+      ganhos: () => `
+        <div class="cards-numeros">
+          <div class="numero destaque"><small>Disponível para saque</small><strong>${reais(0)}</strong></div>
+          <div class="numero"><small>A liberar</small><strong>${reais(0)}</strong></div>
+          <div class="numero"><small>Total recebido</small><strong>${reais(0)}</strong></div>
+        </div>
+        <div class="painel">
+          <div class="painel-topo"><h2>Extrato</h2>
+            <select class="btn btn-pequeno" aria-label="Período"><option>Últimos 7 dias</option><option>Este mês</option><option>Mês passado</option></select></div>
+          <div class="vazio"><div class="icone">📊</div>Nenhum ganho no período.<br>Cada crédito recebido vale ${reais(VALOR_CREDITO_MODELO)} para você.</div>
+        </div>
+        <div class="painel">
+          <h2>Dados para saque (Pix)</h2>
+          <div class="linha">
+            <div class="campo"><label for="tipo-chave">Tipo de chave</label><select id="tipo-chave"><option>CPF</option><option>E-mail</option><option>Celular</option><option>Aleatória</option></select></div>
+            <div class="campo"><label for="chave-pix">Chave Pix</label><input id="chave-pix"></div>
+          </div>
+          <button class="btn btn-primario" data-salvar>Salvar</button>
+        </div>`,
+
+      perfil: () => `
+        <form class="painel" novalidate>
+          <h2>Meu perfil</h2>
+          <div class="linha">
+            <div class="campo"><label for="p-nome">Nome artístico</label><input id="p-nome" value="${esc(m.nome)}"></div>
+            <div class="campo"><label for="p-cidade">Cidade</label><input id="p-cidade" value="${esc(m.cidade)}"></div>
+          </div>
+          <div class="campo"><label for="p-bio">Sobre mim</label><textarea id="p-bio" maxlength="600">${esc(m.bio)}</textarea></div>
+          <div class="linha">
+            <div class="campo"><label for="p-tags">Interesses (separados por vírgula)</label><input id="p-tags" value="${esc(m.tags.join(", "))}"></div>
+            <div class="campo"><label for="p-idiomas">Idiomas</label><input id="p-idiomas" value="${esc(m.idiomas.join(", "))}"></div>
+          </div>
+          <div class="campo"><label>Fotos</label>
+            <div class="galeria">${[m.foto, ...m.galeria].map((f) => `<img src="${esc(f)}" alt="">`).join("")}</div>
+            <span class="ajuda">Envio de fotos chega junto com o backend. Por enquanto, troque os arquivos em assets/img/.</span></div>
+          <button class="btn btn-primario" data-salvar>Salvar perfil</button>
+        </form>`,
+
+      sala: () => `
+        <form class="painel" novalidate>
+          <h2>Configurar sala</h2>
+          <div class="linha">
+            <div class="campo"><label for="s-privado">Preço do privado (créditos/min)</label><input id="s-privado" type="number" min="1" value="${m.precoPrivado}"></div>
+            <div class="campo"><label for="s-alvo">Meta de gorjetas (créditos)</label><input id="s-alvo" type="number" min="1" value="${m.meta?.alvo ?? ""}"></div>
+          </div>
+          <div class="campo"><label for="s-meta">Título da meta</label><input id="s-meta" value="${esc(m.meta?.titulo ?? "")}" maxlength="60"></div>
+          <div class="campo"><label for="s-boas">Mensagem de boas-vindas no chat</label><input id="s-boas" maxlength="120" placeholder="Bem-vindo(a) à minha sala! 💜"></div>
+          <div class="campo"><label for="s-bloq">Palavras bloqueadas no chat (separadas por vírgula)</label><input id="s-bloq" placeholder="ex.: telefone, whatsapp"></div>
+          <button class="btn btn-primario" data-salvar>Salvar</button>
+        </form>`
+    };
+
+    function abrir() {
+      const nome = location.hash.slice(1) in secoes ? location.hash.slice(1) : "inicio";
+      document.querySelectorAll("#lateral a").forEach((a) => a.classList.toggle("ativo", a.hash === "#" + nome));
+      conteudo.innerHTML = secoes[nome]();
+    }
+
+    conteudo.addEventListener("click", (e) => {
+      if (e.target.closest("[data-salvar]")) { e.preventDefault(); LV.toast("Salvar fica ativo quando o backend estiver pronto. Por enquanto edite assets/js/modelos.js."); }
+      const c = e.target.closest("[data-copiar]");
+      if (c) { navigator.clipboard?.writeText(document.getElementById(c.dataset.copiar).value); LV.toast("Copiado!"); }
+      if (e.target.id === "mostrar") {
+        const k = document.getElementById("chave");
+        k.type = k.type === "password" ? "text" : "password";
+        e.target.textContent = k.type === "password" ? "Mostrar" : "Ocultar";
+      }
+    });
+    conteudo.addEventListener("change", (e) => {
+      if (e.target.id === "status") {
+        LV.gravar("lv_painel_online", e.target.checked ? "1" : "0");
+        document.getElementById("status-txt").textContent = e.target.checked ? "Ao vivo" : "Offline";
+        LV.toast(e.target.checked ? "Você está ao vivo!" : "Sala fechada.");
+      }
+    });
+    window.addEventListener("hashchange", abrir);
+    abrir();
+  </script>
+</body>
+</html>

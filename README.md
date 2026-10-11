@@ -7,12 +7,30 @@ Site de transmissão ao vivo, pensado para **começar com 1 modelo** e crescer d
 
 | Arquivo | O que é |
 |---|---|
-| `index.html` | Início: modelo em destaque, agenda e "como funciona". Com 2 ou mais modelos aparece também a grade com o filtro "Ao vivo agora". |
-| `sala.html?m=slug` | Sala da modelo: player, chat, gorjetas, show privado e abas (sobre, fotos, agenda). |
+| `index.html` | Início: modelo em destaque, agenda e "como funciona". Com 2+ modelos aparece a grade com filtro "Ao vivo agora". |
+| `sala.html?m=slug` | Sala: player, meta de gorjetas, gorjetas (rápidas ou valor livre com recado), show privado com cronômetro e cobrança por minuto, chat, seguir, abas sobre/fotos/agenda. |
 | `creditos.html` | Pacotes de créditos e dúvidas frequentes. |
-| `termos.html` | Modelo de termos de uso e privacidade (revisar com advogado). |
+| `checkout.html?p=N` | Pagamento do pacote N: Pix (QR Code, copia e cola, contagem regressiva) ou cartão, e tela de aprovado/recusado. |
+| `entrar.html`, `cadastro.html`, `recuperar-senha.html` | Login, cadastro (checa 18+ pela data de nascimento) e recuperação de senha. |
+| `conta.html` | Minha conta: saldo, extrato de créditos, modelos seguidas e meus dados. |
+| `painel-modelo.html` | Área da modelo: ficar ao vivo, como transmitir pelo OBS, ganhos, perfil e configurações da sala. |
+| `termos.html`, `404.html` | Termos/privacidade (revisar com advogado) e página de erro. |
 
 Todas as páginas mostram o aviso de **18+** na primeira visita.
+
+## Modo demonstração
+
+Com `modoDemo: true` em `assets/js/config.js`, login, saldo, extrato e pagamento são simulados
+no navegador (há uma faixa amarela avisando). Dá para testar o fluxo inteiro: criar conta →
+comprar créditos → "Simular pagamento aprovado" → mandar gorjeta → show privado → ver o extrato.
+
+O checkout já chama a API da integração Unicopag quando `modoDemo` for `false`:
+
+- `POST api/cobranca.php` com `{ pacote, metodo: "pix"|"cartao", nome, cpf, email, cartao? }`
+  → `{ id, status, pix?: { qrcode_base64, copia_cola, expira_em } }`
+- `GET api/status.php?id=…` → `{ status: "pendente"|"pago"|"falhou"|"expirado", creditos }`
+
+> A `painel-modelo.html` ainda não tem senha. Antes de colocar o site no ar, ela precisa de login próprio da modelo.
 
 ## Como trocar os dados da modelo
 
@@ -29,21 +47,20 @@ Marque `destaque: true` na modelo que deve aparecer no topo da home.
 
 ## Configurações gerais
 
-Em `assets/js/config.js` ficam o nome do site, o e-mail de suporte, os pacotes de créditos
-(com o campo `checkoutUrl` para o link de pagamento) e os valores rápidos de gorjeta.
+Em `assets/js/config.js` ficam o nome do site, o e-mail de suporte, o modo demonstração, os pacotes de créditos,
+os valores rápidos de gorjeta e o mínimo de minutos para o show privado.
 
 ## O que ainda é demonstração (próximas etapas)
 
-1. **Transmissão ao vivo:** contratar um serviço de streaming que aceite conteúdo adulto e
+1. **Pagamento (Unicopag):** em andamento no branch `claude/unicopag-integracao`.
+2. **Transmissão ao vivo:** contratar um serviço de streaming que aceite conteúdo adulto e
    colar o link do player no campo `streamUrl`. A modelo transmite pelo OBS (RTMP).
-2. **Login e cadastro:** hoje o botão "Entrar" só mostra um aviso.
-3. **Pagamento e saldo:** usar um processador que aceite conteúdo adulto. Hoje o saldo é sempre 0
-   e o botão "Comprar" só funciona quando houver `checkoutUrl`.
+3. **Login, cadastro e saldo no servidor:** hoje ficam simulados no navegador.
 4. **Chat em tempo real:** hoje as mensagens ficam só no navegador de quem escreve.
 5. **Status online automático:** hoje o campo `online` é manual.
 6. **Painel da modelo:** para ver ganhos, editar perfil e abrir ou fechar a sala.
 
-As etapas 2 a 6 precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
+Os itens acima, menos o streaming, precisam de backend (por exemplo Supabase ou PHP + MySQL na Hostinger).
 
 ## Cuidados legais
 

@@ -4,26 +4,88 @@
 
   const ler = (k, padrao) => { try { return localStorage.getItem(k) ?? padrao; } catch { return padrao; } };
   const gravar = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  const apagar = (k) => { try { localStorage.removeItem(k); } catch {} };
+  const lerJSON = (k, padrao) => { try { return JSON.parse(ler(k, "")) ?? padrao; } catch { return padrao; } };
 
   const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const reais = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const dataHora = (iso) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 
-  // Saldo de créditos. Hoje é só visual (sempre começa em 0).
-  // Quando o login + pagamento estiverem prontos, o saldo vem do servidor.
-  const saldo = () => Number(ler("lv_saldo", 0));
+  /*
+   * MODO DEMONSTRAÇÃO
+   * Enquanto o backend (login + Unicopag) não está no ar, usuário, saldo e
+   * extrato ficam só no navegador, para dar para testar o fluxo inteiro.
+   * Quando o backend entrar, estas funções passam a chamar a pasta api/.
+   */
+  const usuario = () => lerJSON("lv_usuario", null);
+  const entrar = (u) => gravar("lv_usuario", JSON.stringify(u));
+  const sair = () => { apagar("lv_usuario"); };
+  const extrato = () => lerJSON("lv_extrato", []);
+  const saldo = () => extrato().reduce((s, l) => s + l.valor, 0);
+  function lancar(valor, descricao) {
+    const lista = extrato();
+    lista.unshift({ valor, descricao, data: new Date().toISOString() });
+    gravar("lv_extrato", JSON.stringify(lista.slice(0, 200)));
+    const el = document.getElementById("saldo");
+    if (el) el.textContent = saldo();
+  }
 
   function toast(texto) {
     let el = document.querySelector(".toast");
-    if (!el) { el = document.createElement("div"); el.className = "toast"; document.body.appendChild(el); }
+    if (!el) { el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
     el.textContent = texto;
     el.classList.add("visivel");
     clearTimeout(el._t);
     el._t = setTimeout(() => el.classList.remove("visivel"), 3200);
   }
 
+  // Abre um modal. Fecha clicando fora, no [data-fechar] ou com Esc.
+  function modal(html, { largo = false } = {}) {
+    const fundo = document.createElement("div");
+    fundo.className = "modal-fundo";
+    fundo.innerHTML = `<div class="modal ${largo ? "modal-largo" : ""}" role="dialog" aria-modal="true">
+      <button class="modal-x" data-fechar aria-label="Fechar">×</button>${html}</div>`;
+    const fechar = () => { fundo.remove(); document.removeEventListener("keydown", esc_); document.body.style.overflow = ""; };
+    const esc_ = (e) => { if (e.key === "Escape") fechar(); };
+    fundo.addEventListener("click", (e) => { if (e.target === fundo || e.target.closest("[data-fechar]")) fechar(); });
+    document.addEventListener("keydown", esc_);
+    document.body.appendChild(fundo);
+    document.body.style.overflow = "hidden";
+    fundo.fechar = fechar;
+    return fundo;
+  }
+
+  // Pede login antes de uma ação. Devolve true se já estiver logado.
+  function exigirLogin(motivo) {
+    if (usuario()) return true;
+    modal(`
+      <div class="modal-icone">🔐</div>
+      <h2>Entre para continuar</h2>
+      <p>${esc(motivo || "Você precisa estar logado para fazer isso.")}</p>
+      <div class="acoes">
+        <a class="btn btn-primario btn-bloco" href="entrar.html?volta=${encodeURIComponent(location.pathname.split("/").pop() + location.search)}">Entrar</a>
+        <a class="btn btn-bloco" href="cadastro.html">Criar conta grátis</a>
+      </div>`);
+    return false;
+  }
+
+  function semCreditos(precisa) {
+    modal(`
+      <div class="modal-icone">●</div>
+      <h2>Créditos insuficientes</h2>
+      <p>Você precisa de <strong>${precisa}</strong> créditos e tem <strong>${saldo()}</strong>.
+         Compre um pacote e volte para a sala.</p>
+      <div class="acoes">
+        <a class="btn btn-primario btn-bloco" href="creditos.html">Comprar créditos</a>
+        <button class="btn btn-bloco" data-fechar>Agora não</button>
+      </div>`);
+  }
+
   function topo(ativo) {
     const unica = window.MODELOS.length === 1;
+    const u = usuario();
     return `
+    ${S.modoDemo ? `<div class="faixa-demo">Modo demonstração: login, saldo e pagamentos são simulados neste navegador.</div>` : ""}
     <header class="topo"><div class="container">
       <a class="marca" href="index.html"><img src="assets/img/logo.svg" alt="">${esc(S.nome)}</a>
       <nav class="menu">
@@ -36,8 +98,20 @@
       </nav>
       <div class="topo-acoes">
         <a class="saldo" href="creditos.html" title="Seus créditos"><span class="moeda">●</span> <span id="saldo">${saldo()}</span> <span style="color:var(--rosa)">+</span></a>
-        <button class="btn btn-pequeno btn-entrar" data-acao="entrar">Entrar</button>
-        <a class="btn btn-primario btn-pequeno btn-comprar" href="creditos.html">Comprar créditos</a>
+        ${u
+          ? `<div class="menu-conta">
+               <button class="avatar-btn" aria-haspopup="true" aria-label="Minha conta">${esc(u.apelido.slice(0, 1).toUpperCase())}</button>
+               <div class="menu-conta-lista">
+                 <div class="menu-conta-nome">${esc(u.apelido)}<small>${esc(u.email)}</small></div>
+                 <a href="conta.html">Minha conta</a>
+                 <a href="conta.html#extrato">Extrato de créditos</a>
+                 <a href="conta.html#seguindo">Seguindo</a>
+                 <a href="creditos.html">Comprar créditos</a>
+                 <button data-acao="sair">Sair</button>
+               </div>
+             </div>`
+          : `<a class="btn btn-pequeno btn-entrar" href="entrar.html">Entrar</a>
+             <a class="btn btn-primario btn-pequeno btn-comprar" href="cadastro.html">Criar conta</a>`}
       </div>
     </div></header>`;
   }
@@ -50,6 +124,7 @@
         <a href="termos.html">Termos de uso</a>
         <a href="termos.html#privacidade">Privacidade</a>
         <a href="mailto:${esc(S.emailSuporte)}">Suporte</a>
+        <a href="painel-modelo.html">Área da modelo</a>
       </nav>
     </div></footer>`;
   }
@@ -83,7 +158,9 @@
     document.body.insertAdjacentHTML("afterbegin", topo(ativo));
     document.body.insertAdjacentHTML("beforeend", rodape());
     document.addEventListener("click", (e) => {
-      if (e.target.closest("[data-acao=entrar]")) toast("Login e cadastro serão ativados na próxima etapa.");
+      const conta = document.querySelector(".menu-conta");
+      if (conta) conta.classList.toggle("aberto", !!e.target.closest(".avatar-btn") && !conta.classList.contains("aberto"));
+      if (e.target.closest("[data-acao=sair]")) { sair(); location.href = "index.html"; }
     });
     if (!document.body.dataset.semAviso) avisoIdade();
   }
@@ -99,5 +176,8 @@
       </a>`;
   }
 
-  window.LV = { esc, reais, saldo, toast, montar, cardModelo, ler, gravar };
+  window.LV = {
+    esc, reais, dataHora, toast, modal, montar, cardModelo, ler, gravar,
+    usuario, entrar, sair, saldo, extrato, lancar, exigirLogin, semCreditos
+  };
 })();
