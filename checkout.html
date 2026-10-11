@@ -26,8 +26,9 @@
      * CHECKOUT
      * Contrato com o backend (pasta api/, integração Unicopag):
      *   POST api/cobranca.php  { pacote, metodo: "pix"|"cartao", nome, cpf, email, cartao? }
-     *        → { id, status, pix?: { qrcode_base64, copia_cola, expira_em } }
-     *   GET  api/status.php?id=…  → { status: "pendente"|"pago"|"falhou"|"expirado", creditos }
+     *        → { id, status, pix?: { qrcode_base64, qrcode_url, copia_cola, expira_em } }
+     *        → 401 { login: true } quando a sessão expirou
+     *   GET  api/status.php?id=…  → { status: "pendente"|"pago"|"falhou"|"expirado"|"estornado", creditos }
      * Com SITE.modoDemo = true, tudo é simulado aqui mesmo.
      */
     LV.montar("creditos");
@@ -166,6 +167,11 @@
       }
       const res = await fetch("api/cobranca.php", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(pedido) });
       const json = await res.json().catch(() => ({}));
+      if (res.status === 401 && json.login) {
+        LV.sair();
+        location.href = "entrar.html?volta=" + encodeURIComponent("checkout.html?p=" + i);
+        return new Promise(() => {}); // a página vai trocar
+      }
       if (!res.ok) throw new Error(json.erro || "Não foi possível gerar a cobrança.");
       return json;
     }
@@ -182,7 +188,7 @@
         try {
           const r = await consultar(id);
           if (r.status === "pago") { clearInterval(timer); aprovado(); }
-          if (r.status === "falhou" || r.status === "expirado" || r.status === "estornado") { clearInterval(timer); falhou(r.status); }
+          if (["falhou", "expirado", "estornado"].includes(r.status)) { clearInterval(timer); falhou(r.status); }
         } catch {}
       }, 4000);
     }
@@ -201,6 +207,32 @@
       return `<svg viewBox="0 0 25 25" shape-rendering="crispEdges">${s}</svg>`;
     }
 
+    // QR do Pix, nesta ordem: imagem em base64, link da imagem, QR gerado do copia e cola.
+    // O QR de demonstração (falso) só aparece com modoDemo ligado.
+    function qrPix(pix) {
+      if (pix.qrcode_base64) return `<img alt="QR Code Pix" src="data:image/png;base64,${esc(pix.qrcode_base64)}">`;
+      if (/^https:\/\//.test(pix.qrcode_url || "")) return `<img alt="QR Code Pix" src="${esc(pix.qrcode_url)}">`;
+      if (S.modoDemo) return qrDemo();
+      return ""; // gerado em seguida por gerarQr()
+    }
+    function gerarQr(texto) {
+      const caixa = $("pix-qr");
+      const desenhar = () => {
+        const qr = window.qrcode(0, "M");
+        qr.addData(texto);
+        qr.make();
+        caixa.innerHTML = qr.createSvgTag({ margin: 0, scalable: true });
+      };
+      // Sem QR, o cliente ainda paga pelo copia e cola
+      const semQr = () => { caixa.remove(); };
+      if (window.qrcode) return desenhar();
+      const sc = document.createElement("script");
+      sc.src = "assets/js/vendor/qrcode.js"; // qrcode-generator 1.4.4 (MIT)
+      sc.onload = () => { try { desenhar(); } catch { semQr(); } };
+      sc.onerror = semQr;
+      document.head.appendChild(sc);
+    }
+
     function mostrarPix(r) {
       const expira = new Date(r.pix.expira_em);
       etapa.innerHTML = `
@@ -208,9 +240,7 @@
         <div class="pix-box">
           <h2>Pague com Pix</h2>
           <p style="color:var(--texto-2);margin-bottom:16px">Abra o app do seu banco e escaneie o QR Code ou use o Pix copia e cola.</p>
-          <div class="pix-qr">${r.pix.qrcode_base64 ? `<img alt="QR Code Pix" src="data:image/png;base64,${esc(r.pix.qrcode_base64)}">`
-            : r.pix.qrcode_url ? `<img alt="QR Code Pix" src="${esc(r.pix.qrcode_url)}">`
-            : S.modoDemo ? qrDemo() : `<p style="color:var(--texto-2)">Use o Pix copia e cola abaixo.</p>`}</div>
+          <div class="pix-qr" id="pix-qr">${qrPix(r.pix)}</div>
           <strong style="font-size:1.4rem">${reais(pacote.preco)}</strong>
           <div class="copia-cola">
             <input id="copia" readonly value="${esc(r.pix.copia_cola)}" aria-label="Pix copia e cola">
@@ -229,6 +259,7 @@
         LV.toast("Código Pix copiado!");
       });
       $("simular")?.addEventListener("click", aprovado);
+      if (!$("pix-qr").innerHTML) gerarQr(r.pix.copia_cola);
       const tick = () => {
         const s = Math.max(0, Math.round((expira - Date.now()) / 1000));
         const cron = $("cron"); if (!cron) return clearInterval(relogio);
@@ -262,8 +293,11 @@
       etapa.innerHTML = `
         <div class="sucesso">
           <div class="ok" style="background:rgba(255,84,112,.15);color:#ff7a90">!</div>
-          <h2>${status === "expirado" ? "O Pix expirou" : "Pagamento não aprovado"}</h2>
-          <p style="color:var(--texto-2);margin:8px 0 22px">${status === "expirado" ? "Gere um novo código para continuar." : "Nenhum valor foi cobrado. Tente de novo ou use outro método."}</p>
+          <h2>${{ expirado: "O Pix expirou", estornado: "Pagamento estornado" }[status] || "Pagamento não aprovado"}</h2>
+          <p style="color:var(--texto-2);margin:8px 0 22px">${{
+            expirado: "Gere um novo código para continuar.",
+            estornado: "O valor foi devolvido e os créditos não foram adicionados. Em caso de dúvida, fale com o suporte."
+          }[status] || "Nenhum valor foi cobrado. Tente de novo ou use outro método."}</p>
           <button class="btn btn-primario" onclick="location.reload()">Tentar de novo</button>
         </div>`;
     }
